@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: froide-2.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2012-12-26 02:43+0100\n"
+"POT-Creation-Date: 2013-01-12 18:49+0100\n"
 "PO-Revision-Date: 2013-01-07 19:43+0100\n"
 "Last-Translator: Stefan Wehrmeyer <mail@stefanwehrmeyer.com>\n"
 "Language-Team: OKF-DE <info@fragdenstaat.de>\n"
@@ -592,12 +592,12 @@ msgstr "Ihre Informationsfreiheitsanfragen"
 msgid "Title"
 msgstr "Titel"
 
-#: account/templates/account/show.html:81 foirequest/models.py:949
+#: account/templates/account/show.html:81 foirequest/models.py:953
 msgid "Recipient"
 msgstr "Empfänger"
 
 #: account/templates/account/show.html:82 foirequest/forms.py:265
-#: foirequest/models.py:223 foirequest/models.py:956
+#: foirequest/models.py:223 foirequest/models.py:960
 #: foirequest/templates/foirequest/show.html:613
 msgid "Status"
 msgstr "Status"
@@ -838,7 +838,7 @@ msgstr "Suchen Sie nach einem Thema oder nach einer Behörde:"
 
 #: foirequest/forms.py:32 foirequest/forms.py:34 foirequest/forms.py:162
 #: foirequest/forms.py:224 foirequest/forms.py:346 foirequest/forms.py:348
-#: foirequest/models.py:960
+#: foirequest/models.py:964
 #: foirequest/templates/foirequest/_request_form.html:11
 #: foirequest/templates/foirequest/request.html:282
 #: foirequest/templates/foirequest/show.html:594
@@ -1279,7 +1279,7 @@ msgstr "Beschreibung"
 msgid "Resolution Summary"
 msgstr "Ergebniszusammenfassung"
 
-#: foirequest/models.py:219 foirequest/models.py:910 foirequest/models.py:1234
+#: foirequest/models.py:219 foirequest/models.py:914 foirequest/models.py:1238
 #: publicbody/models.py:256
 msgid "Public Body"
 msgstr "Behörde"
@@ -1292,7 +1292,7 @@ msgstr "veröffentlicht?"
 msgid "Visibility"
 msgstr "Sichtbarkeit"
 
-#: foirequest/models.py:230 foirequest/models.py:913 foirequest/models.py:1231
+#: foirequest/models.py:230 foirequest/models.py:917 foirequest/models.py:1235
 #: foirequestfollower/models.py:44 frontpage/models.py:28
 msgid "User"
 msgstr "Nutzer"
@@ -1350,7 +1350,7 @@ msgid "is FoI request"
 msgstr "ist eine IF-Anfrage"
 
 #: foirequest/models.py:259 publicbody/models.py:39 publicbody/models.py:79
-#: publicbody/models.py:244 publicbody/templates/publicbody/show.html:16
+#: publicbody/models.py:244 publicbody/templates/publicbody/show.html:22
 msgid "Jurisdiction"
 msgstr "Zuständigkeitsbereich"
 
@@ -1359,8 +1359,8 @@ msgstr "Zuständigkeitsbereich"
 msgid "Site"
 msgstr "Seite"
 
-#: foirequest/models.py:274 foirequest/models.py:908 foirequest/models.py:928
-#: foirequest/models.py:1228 foirequestfollower/models.py:43
+#: foirequest/models.py:274 foirequest/models.py:912 foirequest/models.py:932
+#: foirequest/models.py:1232 foirequestfollower/models.py:43
 msgid "Freedom of Information Request"
 msgstr "Informationsfreiheitsanfrage"
 
@@ -1373,17 +1373,17 @@ msgstr "Informationsfreiheitsanfragen"
 msgid "Request '%s'"
 msgstr "Anfrage '%s'"
 
-#: foirequest/models.py:347 foirequest/models.py:1068
-#: foirequest/models.py:1080 foirequest/models.py:1087
+#: foirequest/models.py:347 foirequest/models.py:1072
+#: foirequest/models.py:1084 foirequest/models.py:1091
 msgid "<<email address>>"
 msgstr "<<E-Mailadresse>>"
 
-#: foirequest/models.py:521
+#: foirequest/models.py:525
 #, python-format
 msgid "Re: %(subject)s"
 msgstr "AW: %(subject)s "
 
-#: foirequest/models.py:528
+#: foirequest/models.py:532
 #, python-format
 msgid ""
 "Dear Sir or Madam,\n"
@@ -1400,12 +1400,12 @@ msgstr ""
 "Mit freundlichen Grüßen\n"
 "%(name)s\n"
 
-#: foirequest/models.py:536
+#: foirequest/models.py:540
 #, python-format
 msgid "Complaint about request \"%(title)s\""
 msgstr "Vermittlung bei Anfrage \"%(title)s\""
 
-#: foirequest/models.py:540
+#: foirequest/models.py:544
 #, python-format
 msgid ""
 "Dear Sir or Madam,\n"
@@ -1434,248 +1434,248 @@ msgstr ""
 "Mit freundlichen Grüßen\n"
 "%(name)s"
 
-#: foirequest/models.py:579
+#: foirequest/models.py:583
 #, python-format
 msgid "attached_file_%d"
 msgstr "angehaengte_datei_%d"
 
-#: foirequest/models.py:589
+#: foirequest/models.py:593
 msgid "Message contains PDF"
 msgstr "Nachricht enthält ein PDF"
 
-#: foirequest/models.py:659 foirequest/models.py:663
+#: foirequest/models.py:663 foirequest/models.py:667
 msgid "Unknown"
 msgstr "Unbekannt"
 
-#: foirequest/models.py:884
+#: foirequest/models.py:888
 #, python-format
 msgid "%(site_name)s: Please classify the reply to your request"
 msgstr "%(site_name)s: Bitte setzen Sie den Status Ihrer Anfrage"
 
-#: foirequest/models.py:894 foirequestfollower/models.py:99
+#: foirequest/models.py:898 foirequestfollower/models.py:99
 #, python-format
 msgid "%(site_name)s: Update on request %(request)s"
 msgstr "%(site_name)s: Neues bei Anfrage \"%(request)s\""
 
-#: foirequest/models.py:914
+#: foirequest/models.py:918
 msgid "Timestamp of Suggestion"
 msgstr "Zeitstempel des Vorschlags"
 
-#: foirequest/models.py:916
+#: foirequest/models.py:920
 msgid "Reason this Public Body fits the request"
 msgstr "Begründung, warum diese Behörde zur Anfrage passt"
 
-#: foirequest/models.py:922
+#: foirequest/models.py:926
 msgid "Public Body Suggestion"
 msgstr "Vorschlag für Behörde"
 
-#: foirequest/models.py:923
+#: foirequest/models.py:927
 msgid "Public Body Suggestions"
 msgstr "Vorschläge für Behörden"
 
-#: foirequest/models.py:929
+#: foirequest/models.py:933
 msgid "has message been sent?"
 msgstr "wurde die Nachricht versendet?"
 
-#: foirequest/models.py:930
+#: foirequest/models.py:934
 msgid "Is this message a response?"
 msgstr "Ist diese Nachricht eine Antwort?"
 
-#: foirequest/models.py:932
+#: foirequest/models.py:936
 msgid "Postal?"
 msgstr "Postweg?"
 
-#: foirequest/models.py:934
+#: foirequest/models.py:938
 msgid "Escalation?"
 msgstr "Vermittlung?"
 
-#: foirequest/models.py:936
+#: foirequest/models.py:940
 msgid "Content hidden?"
 msgstr "Text versteckt?"
 
-#: foirequest/models.py:940
+#: foirequest/models.py:944
 msgid "From User"
 msgstr "Von Nutzer"
 
-#: foirequest/models.py:941
+#: foirequest/models.py:945
 msgid "From Email"
 msgstr "Von E-Mail"
 
-#: foirequest/models.py:943
+#: foirequest/models.py:947
 msgid "From Name"
 msgstr "Von Name"
 
-#: foirequest/models.py:947
+#: foirequest/models.py:951
 msgid "From Public Body"
 msgstr "Von Behörde"
 
-#: foirequest/models.py:951
+#: foirequest/models.py:955
 msgid "Recipient Email"
 msgstr "Empfänger-E-mail"
 
-#: foirequest/models.py:955
+#: foirequest/models.py:959
 msgid "Public Body Recipient"
 msgstr "Empfangende Behörde"
 
-#: foirequest/models.py:959 foirequest/models.py:1237 frontpage/models.py:22
+#: foirequest/models.py:963 foirequest/models.py:1241 frontpage/models.py:22
 msgid "Timestamp"
 msgstr "Zeitstempel"
 
-#: foirequest/models.py:961
+#: foirequest/models.py:965
 msgid "plain text"
 msgstr "einfacher Text"
 
-#: foirequest/models.py:962
+#: foirequest/models.py:966
 msgid "HTML"
 msgstr "HTML"
 
-#: foirequest/models.py:963
+#: foirequest/models.py:967
 msgid "Original"
 msgstr "Original"
 
-#: foirequest/models.py:964
+#: foirequest/models.py:968
 msgid "Was Redacted?"
 msgstr "wurde geschwärzt?"
 
-#: foirequest/models.py:965
+#: foirequest/models.py:969
 msgid "Not publishable"
 msgstr "Veröffentlichung verboten"
 
-#: foirequest/models.py:971
+#: foirequest/models.py:975
 msgid "Freedom of Information Message"
 msgstr "Informationsfreiheitsnachricht"
 
-#: foirequest/models.py:972
+#: foirequest/models.py:976
 msgid "Freedom of Information Messages"
 msgstr "Informationsfreiheitsnachrichten"
 
-#: foirequest/models.py:979
+#: foirequest/models.py:983
 #, python-format
 msgid "Message in '%(request)s' at %(time)s"
 msgstr "Nachricht in '%(request)s' um %(time)s"
 
-#: foirequest/models.py:988
+#: foirequest/models.py:992
 #, python-format
 msgid "message-%(id)d"
 msgstr "nachricht-%(id)d"
 
-#: foirequest/models.py:1067 foirequest/models.py:1079
+#: foirequest/models.py:1071 foirequest/models.py:1083
 msgid "<<name and email address>>"
 msgstr "<<Name und E-Mailadresse>>"
 
-#: foirequest/models.py:1121
+#: foirequest/models.py:1125
 msgid "Belongs to request"
 msgstr "Gehört zur Anfrage"
 
-#: foirequest/models.py:1122 publicbody/models.py:30 publicbody/models.py:68
+#: foirequest/models.py:1126 publicbody/models.py:30 publicbody/models.py:68
 #: publicbody/models.py:190 publicbody/models.py:206
 #: publicbody/templates/publicbody/pb_jurisdiction.html:14
 #: publicbody/templates/publicbody/show_topic.html:22
 msgid "Name"
 msgstr "Name"
 
-#: foirequest/models.py:1123
+#: foirequest/models.py:1127
 msgid "File"
 msgstr "Datei"
 
-#: foirequest/models.py:1124
+#: foirequest/models.py:1128
 msgid "Size"
 msgstr "Größe"
 
-#: foirequest/models.py:1125
+#: foirequest/models.py:1129
 msgid "File type"
 msgstr "Dateityp"
 
-#: foirequest/models.py:1126
+#: foirequest/models.py:1130
 msgid "Format"
 msgstr "Format"
 
-#: foirequest/models.py:1127
+#: foirequest/models.py:1131
 msgid "User can approve"
 msgstr "Nutzer kann genehmigen"
 
-#: foirequest/models.py:1128
+#: foirequest/models.py:1132
 msgid "Approved"
 msgstr "Veröffentlicht"
 
-#: foirequest/models.py:1129
+#: foirequest/models.py:1133
 msgid "Redacted Version"
 msgstr "Geschwärzte Version"
 
-#: foirequest/models.py:1131
+#: foirequest/models.py:1135
 msgid "Is redacted"
 msgstr "Ist geschwärzt"
 
-#: foirequest/models.py:1146
+#: foirequest/models.py:1150
 msgid "Attachment"
 msgstr "Anhang"
 
-#: foirequest/models.py:1147
+#: foirequest/models.py:1151
 #: foirequest/templates/foirequest/list_unchecked.html:24
 #: foirequest/templates/foirequest/show.html:627
 msgid "Attachments"
 msgstr "Anhänge"
 
-#: foirequest/models.py:1169
+#: foirequest/models.py:1173
 #, python-format
 msgid "attachment-%(id)d"
 msgstr "anhang-%(id)d"
 
-#: foirequest/models.py:1204
+#: foirequest/models.py:1208
 msgid "See FoiMessage"
 msgstr "Siehe IFG-Nachricht"
 
-#: foirequest/models.py:1235
+#: foirequest/models.py:1239
 msgid "Is Public?"
 msgstr "Öffentlich oder nicht?"
 
-#: foirequest/models.py:1236
+#: foirequest/models.py:1240
 msgid "Event Name"
 msgstr "Ereignisname"
 
-#: foirequest/models.py:1238
+#: foirequest/models.py:1242
 msgid "Context JSON"
 msgstr "Kontext JSON"
 
-#: foirequest/models.py:1244
+#: foirequest/models.py:1248
 #, python-format
 msgid "%(user)s suggested %(public_body)s for the request '%(request)s'"
 msgstr "%(user)s schlug %(public_body)s für die Anfrage '%(request)s' vor."
 
-#: foirequest/models.py:1246
+#: foirequest/models.py:1250
 #, python-format
 msgid "%(user)s reported costs of %(amount)s for this request."
 msgstr ""
 "%(user)s hat Kosten in Höhe von %(amount)s für diese Anfrage angegeben."
 
-#: foirequest/models.py:1248
+#: foirequest/models.py:1252
 #, python-format
 msgid "Received an email from %(public_body)s."
 msgstr "E-Mail von %(public_body)s erhalten."
 
-#: foirequest/models.py:1250
+#: foirequest/models.py:1254
 #, python-format
 msgid "%(user)s sent a message to %(public_body)s."
 msgstr "%(user)s hat eine Nachricht an %(public_body)s gesendet."
 
-#: foirequest/models.py:1252
+#: foirequest/models.py:1256
 #, python-format
 msgid "Request was redirected to %(public_body)s and due date has been reset."
 msgstr ""
 "Die Anfrage wurde an %(public_body)s weitergeleitet und die Frist neu "
 "gesetzt."
 
-#: foirequest/models.py:1254
+#: foirequest/models.py:1258
 #, python-format
 msgid "%(user)s set status to '%(status)s'."
 msgstr "%(user)s hat den Status auf '%(status)s' gesetzt."
 
-#: foirequest/models.py:1256
+#: foirequest/models.py:1260
 #, python-format
 msgid "%(user)s made the request '%(request)s' public."
 msgstr "%(user)s hat die Anfrage '%(request)s' öffentlich geschaltet."
 
-#: foirequest/models.py:1258
+#: foirequest/models.py:1262
 #, python-format
 msgid ""
 "%(public_body)s refused to provide information on the grounds of %(reason)s."
@@ -1683,7 +1683,7 @@ msgstr ""
 "%(public_body)s weigert sich, die Information zur Verfügung zu stellen aus "
 "folgendem Grund: %(reason)s."
 
-#: foirequest/models.py:1260
+#: foirequest/models.py:1264
 #, python-format
 msgid ""
 "%(public_body)s answered partially, but denied access to all information on "
@@ -1692,11 +1692,11 @@ msgstr ""
 "%(public_body)s hat teilweise geantwortet, hat aber Zugang zu allen "
 "angefragten Informationen aus folgendem Grund verweigert: %(reason)s."
 
-#: foirequest/models.py:1262
+#: foirequest/models.py:1266
 msgid "This request became overdue"
 msgstr "Die Frist für diese Anfrage ist abgelaufen"
 
-#: foirequest/models.py:1264
+#: foirequest/models.py:1268
 #, python-format
 msgid ""
 "%(user)s set '%(name)s' as the information law for the request %(request)s."
@@ -1704,13 +1704,13 @@ msgstr ""
 "%(user)s legte %(name)s als zutreffendes Informationsgesetz für die Anfrage "
 "%(request)s fest."
 
-#: foirequest/models.py:1266
+#: foirequest/models.py:1270
 #, python-format
 msgid "%(user)s added a reply that was received via snail mail."
 msgstr ""
 "%(user)s hat eine Antwort hinzugefügt, die auf dem Postweg erhalten wurde."
 
-#: foirequest/models.py:1268
+#: foirequest/models.py:1272
 #, python-format
 msgid ""
 "%(user)s filed a complaint to the %(public_body)s about the handling of this "
@@ -1718,21 +1718,21 @@ msgid ""
 msgstr ""
 "%(user)s bittet %(public_body)s um Vermittlung bei der Anfrage %(request)s."
 
-#: foirequest/models.py:1270
+#: foirequest/models.py:1274
 #, python-format
 msgid "The deadline of request %(request)s has been extended."
 msgstr "Die Frist der Anfrage %(request)s wurde verlängert."
 
-#: foirequest/models.py:1275
+#: foirequest/models.py:1279
 msgid "Request Event"
 msgstr "Anfrageereignis"
 
-#: foirequest/models.py:1276
+#: foirequest/models.py:1280
 msgid "Request Events"
 msgstr "Anfrageereignisse"
 
 #. Translators: Hash part of Event URL
-#: foirequest/models.py:1289
+#: foirequest/models.py:1293
 msgid "event"
 msgstr "ereignis"
 
@@ -1806,7 +1806,7 @@ msgstr "Ihre Anfrage wurde gesendet."
 msgid "?request-made"
 msgstr "?anfrage-gestellt"
 
-#: foirequest/views.py:367 foirequest/views.py:761
+#: foirequest/views.py:367 foirequest/views.py:765
 msgid "Please check your inbox for mail from us to confirm your mail address."
 msgstr ""
 "Bitte überprüfen Sie Ihren Posteingang und bestätigen Sie Ihre E-Mailadresse."
@@ -1855,55 +1855,59 @@ msgstr "Ungültige Eingabe im Formular!"
 msgid "Your Message has been sent."
 msgstr "Ihre Nachricht wurde gesendet."
 
-#: foirequest/views.py:479
+#: foirequest/views.py:477
+msgid "Your request cannot be escalated."
+msgstr "Ihre Anfrage kann nicht eskaliert werden."
+
+#: foirequest/views.py:483
 msgid "Your Escalation Message has been sent."
 msgstr "Ihre Anfrage nach Vermittlung wurde gesendet."
 
-#: foirequest/views.py:507
+#: foirequest/views.py:511
 msgid "A concrete law has been set for this request."
 msgstr "Ein konkretes Gesetz wurde für diese Anfrage festgelegt."
 
-#: foirequest/views.py:520
+#: foirequest/views.py:524
 msgid "Tags have been set for this request"
 msgstr "Die Tags dieser Anfrage wurden gespeichert."
 
-#: foirequest/views.py:537
+#: foirequest/views.py:541
 msgid "The resolution summary has been saved."
 msgstr "Ihre Ergebniszusammenfassung wurde gespeichert."
 
-#: foirequest/views.py:581
+#: foirequest/views.py:585
 msgid "A postal reply was successfully added!"
 msgstr "Eine per Post erhaltene Antwort wurde hinzugefügt!"
 
-#: foirequest/views.py:584
+#: foirequest/views.py:588
 msgid "There were errors with your form submission!"
 msgstr "Ihre Angaben waren fehlerhaft!"
 
-#: foirequest/views.py:614
+#: foirequest/views.py:618
 msgid "Your document was attached to the message."
 msgstr "Ihr Dokument wurde an die Antwort angehängt."
 
-#: foirequest/views.py:654
+#: foirequest/views.py:658
 msgid "Request marked as not a FoI request."
 msgstr "Anfrage wurde als nicht-IF markiert."
 
-#: foirequest/views.py:668
+#: foirequest/views.py:672
 msgid "Request marked as checked."
 msgstr "Anfrage als gesehen markiert."
 
-#: foirequest/views.py:685
+#: foirequest/views.py:689
 msgid "Attachment approved."
 msgstr "Anhang veröffentlicht."
 
-#: foirequest/views.py:700
+#: foirequest/views.py:704
 msgid "Content published."
 msgstr "Nachricht veröffentlicht."
 
-#: foirequest/views.py:739
+#: foirequest/views.py:743
 msgid "You already made an identical request"
 msgstr "Sie haben schon eine identische Anfrage gestellt"
 
-#: foirequest/views.py:742
+#: foirequest/views.py:746
 #, python-format
 msgid ""
 "Please see this request on FragDenStaat.de where you granted access to this "
@@ -1912,19 +1916,19 @@ msgstr ""
 "Ich verweise auf eine Anfrage auf FragDenStaat.de, der Sie Zugang zu den "
 "angefragten Dokumenten gewährt haben: %(url)s"
 
-#: foirequest/views.py:755
+#: foirequest/views.py:759
 msgid ""
 "You successfully requested this document! Your request is displayed below."
 msgstr ""
 "Sie haben das Dokument nun angefragt. Ihre Anfrage finden Sie auf dieser "
 "Seite."
 
-#: foirequest/views.py:817
+#: foirequest/views.py:821
 #, python-format
 msgid "%s_redacted.pdf"
 msgstr "%s_geschwaerzt.pdf"
 
-#: foirequest/views.py:850
+#: foirequest/views.py:854
 msgid "Deadline has been extended."
 msgstr "Frist wurde verlängert."
 
@@ -2545,6 +2549,10 @@ msgstr ""
 "diesem Fall tun?\", dann brauchen Sie Informationen zu den Dienstleistungen "
 "dieser Behörde:"
 
+#: foirequest/templates/foirequest/request.html:124
+msgid "http://www.115.de"
+msgstr ""
+
 #: foirequest/templates/foirequest/request.html:125
 msgid "Click here to go to 115.de - the Public Body Service Hotline"
 msgstr ""
@@ -2573,6 +2581,10 @@ msgstr ""
 "einer Bezirksvertretung) reden. Sie können Ihrem Bundes- oder "
 "Landtagsabgeordneten (in einzelnen Kommunen auch ihrem Ratsmitglied) auf "
 "abgeordnetenwatch.de Fragen stellen:"
+
+#: foirequest/templates/foirequest/request.html:131
+msgid "http://www.abgeordnetenwatch.de"
+msgstr ""
 
 #: foirequest/templates/foirequest/request.html:131
 msgid "Click here to go to abgeordnetenwatch.de"
@@ -3739,11 +3751,11 @@ msgstr "Anzahl der Anfragen"
 msgid "Public Bodies"
 msgstr "Behörden"
 
-#: publicbody/views.py:133
+#: publicbody/views.py:134
 msgid "This request was already confirmed."
 msgstr "Diese Anfrage war schon bestätigt."
 
-#: publicbody/views.py:136
+#: publicbody/views.py:137
 #, python-format
 msgid "%(count)d message was sent."
 msgid_plural "%(count)d messages were sent"
@@ -3770,7 +3782,7 @@ msgstr "Versuchen Sie zum Beispiel:"
 msgid "Environment"
 msgstr "Umwelt"
 
-#: publicbody/templates/publicbody/_chooser.html:18 templates/index.html:40
+#: publicbody/templates/publicbody/_chooser.html:18 templates/index.html:26
 msgid "or"
 msgstr "oder"
 
@@ -3921,39 +3933,39 @@ msgstr "Schauen Sie sich die Liste der Behörden an."
 msgid "Make a Request to this public body!"
 msgstr "Stellen Sie eine Anfrage an diese Behörde"
 
-#: publicbody/templates/publicbody/show.html:18
+#: publicbody/templates/publicbody/show.html:24
 msgid "Classification:"
 msgstr "Klassifikation:"
 
-#: publicbody/templates/publicbody/show.html:20
+#: publicbody/templates/publicbody/show.html:26
 msgid "Topic:"
 msgstr "Thema:"
 
-#: publicbody/templates/publicbody/show.html:26
+#: publicbody/templates/publicbody/show.html:32
 msgid "Website:"
 msgstr "Webseite:"
 
-#: publicbody/templates/publicbody/show.html:30
+#: publicbody/templates/publicbody/show.html:36
 msgid "Email:"
 msgstr "E-Mail:"
 
-#: publicbody/templates/publicbody/show.html:32
+#: publicbody/templates/publicbody/show.html:38
 msgid "Make a request"
 msgstr "Stellen Sie eine Anfrage"
 
-#: publicbody/templates/publicbody/show.html:34
+#: publicbody/templates/publicbody/show.html:40
 msgid "Contact:"
 msgstr "Kontakt:"
 
-#: publicbody/templates/publicbody/show.html:44
+#: publicbody/templates/publicbody/show.html:50
 msgid "Latest Freedom of Information Requests for this entity"
 msgstr "Neueste Informationsfreiheitsanfragen an diese Behörde"
 
-#: publicbody/templates/publicbody/show.html:51
+#: publicbody/templates/publicbody/show.html:57
 msgid "No requests so far."
 msgstr "Bisher noch keine Anfragen."
 
-#: publicbody/templates/publicbody/show.html:53
+#: publicbody/templates/publicbody/show.html:59
 msgid "Make a request now!"
 msgstr "Stellen Sie jetzt eine Anfrage!"
 
@@ -4119,19 +4131,19 @@ msgstr "Nutzungsbedingungen"
 msgid "Privacy Statement"
 msgstr "Datenschutzerklärung"
 
-#: templates/index.html:10
+#: templates/fundingnotice.html:7
 msgid "Like this? Consider supporting us!"
 msgstr "FragDenStaat.de braucht Deine Unterstützung!"
 
-#: templates/index.html:11
+#: templates/fundingnotice.html:8
 msgid "Donate now!"
 msgstr "Jetzt spenden!"
 
-#: templates/index.html:15
+#: templates/fundingnotice.html:12
 msgid "Flattr us!"
 msgstr "Flattr uns!"
 
-#: templates/index.html:29
+#: templates/index.html:15
 msgid ""
 "This site publishes Freedom of Information requests and helps you to make "
 "your own!"
@@ -4139,36 +4151,36 @@ msgstr ""
 "Diese Seite veröffentlicht Anfragen nach den Informationsgesetzen und hilft "
 "Ihnen, selber Anfragen an den Staat zu stellen."
 
-#: templates/index.html:32
+#: templates/index.html:18
 #, python-format
 msgid "Search %(foicount)s requests and %(pbcount)s public bodies:"
 msgstr "Suchen Sie in %(foicount)s Anfragen und %(pbcount)s Behörden:"
 
-#: templates/index.html:35 templates/search/search.html:12
+#: templates/index.html:21 templates/search/search.html:12
 msgid "Search For Information"
 msgstr "Suchen!"
 
-#: templates/index.html:38
+#: templates/index.html:24
 msgid "Try the following:"
 msgstr "Versuchen Sie:"
 
-#: templates/index.html:39
+#: templates/index.html:25
 msgid "Nuclear"
 msgstr "Atom"
 
-#: templates/index.html:41
+#: templates/index.html:27
 msgid "Employment"
 msgstr "Arbeit"
 
-#: templates/index.html:55
+#: templates/index.html:41
 msgid "Read the blog post"
 msgstr "Lesen Sie den Blogeintrag"
 
-#: templates/index.html:60
+#: templates/index.html:46
 msgid "Visit this request"
 msgstr "Lesen Sie die Anfrage"
 
-#: templates/index.html:65
+#: templates/index.html:51
 msgid ""
 "Freedom of Information Request\n"
 "\n"
@@ -4186,15 +4198,15 @@ msgstr ""
 "ich beantrage Auskunft zu folgender Sachlage:\n"
 "…"
 
-#: templates/index.html:72
+#: templates/index.html:58
 msgid "Write a Request Now!"
 msgstr "Schreiben Sie jetzt eine Anfrage!"
 
-#: templates/index.html:82
+#: templates/index.html:68
 msgid "What is Freedom of Information?"
 msgstr "Was ist Informationsfreiheit?"
 
-#: templates/index.html:83
+#: templates/index.html:69
 msgid ""
 "Every citizen has the right under the Freedom of Information Laws to ask for "
 "and receive access to information from Public Bodies concerning public "
@@ -4203,15 +4215,15 @@ msgstr ""
 "Jeder Bürger hat nach den Informations&shy;gesetzen das Recht, Zugang zu "
 "Informationen der öffentlichen Hand zu erhalten."
 
-#: templates/index.html:85
+#: templates/index.html:71
 msgid "Read more about the Freedom of Information!"
 msgstr "Erfahren Sie mehr über Informations&shy;freiheit."
 
-#: templates/index.html:90
+#: templates/index.html:76
 msgid "What does this site do?"
 msgstr "Was macht diese Seite?"
 
-#: templates/index.html:91
+#: templates/index.html:77
 msgid ""
 "This site publishes Freedom of Information requests and replies so that "
 "others don't have to ask for the same information and replies can be "
@@ -4220,15 +4232,15 @@ msgstr ""
 "Diese Seite veröffentlicht Informations&shy;freiheits&shy;anfragen und ihre "
 "Antworten, so dass der Vorgang durch die Öffentlichkeit geprüft werden kann."
 
-#: templates/index.html:93
+#: templates/index.html:79
 msgid "Read more about the concept!"
 msgstr "Erfahren Sie mehr über das Konzept."
 
-#: templates/index.html:100
+#: templates/index.html:86
 msgid "Successful Requests"
 msgstr "Erfolgreiche Anfragen"
 
-#: templates/index.html:110
+#: templates/index.html:96
 msgid "Unsuccessful Requests"
 msgstr "Abgelehnte Anfragen"
 
@@ -4290,16 +4302,6 @@ msgstr "Ihre Privatsphäre"
 msgid "For FoI Officers"
 msgstr "Für Behördenmitarbeiter"
 
-#: templates/pagination/pagination.html:5
-#: templates/pagination/pagination.html:7
-msgid "previous"
-msgstr "vorherige"
-
-#: templates/pagination/pagination.html:19
-#: templates/pagination/pagination.html:21
-msgid "next"
-msgstr "nächste"
-
 #: templates/search/search.html:6
 #, python-format
 msgid "Search Results for \"%(query)s\""
@@ -4337,6 +4339,12 @@ msgstr "Konnten Sie nicht finden wonach Sie suchen?"
 #: templates/search/search.html:57
 msgid "Make a Freedom of Information Request now!"
 msgstr "Stellen Sie jetzt eine Informationsfreiheitsanfrage!"
+
+#~ msgid "previous"
+#~ msgstr "vorherige"
+
+#~ msgid "next"
+#~ msgstr "nächste"
 
 #~ msgid "Denied?"
 #~ msgstr "Anfrage abgelehnt?"
