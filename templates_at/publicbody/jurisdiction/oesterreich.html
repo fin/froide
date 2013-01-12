@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% load url from future %}
+{% load i18n %}
+{% block body %}
+<div class="state-header" style="background-image: url('{{ STATIC_URL }}img/jurisdictions/{{ object.slug }}_panorama.jpg')">
+  <div class="row">
+    <div class="span12 state-headline">
+      <h1>{% blocktrans with name=object.name %}Freedom of Information<br/>in {{ name }}{% endblocktrans %}</h1>
+      <h2>Fragen Sie Behörden nach Verwaltungsinformationen!</h2>
+    </div>
+  </div>
+  <ul class="state-points thumbnails">
+    <li class="span3">
+      <div class="thumbnail">
+        <h3>{% trans "Which Public Bodies?" %}</h3>
+        {% url 'publicbody-show-pb_jurisdiction' slug=object.slug as pb_url %}
+        <p>Alle Organe des Bundes sowie die Organe der durch die Bundesgesetzgebung zu regelnden Selbstverwaltung</p>
+        <p>{% blocktrans with pb_count=pb_count url=pb_url %}Make a request to one of <a href="{{ url }}">{{ pb_count }} Public Bodies.</a>{% endblocktrans %}</p>
+      </div>
+    </li>
+    <li class="span3">
+      <div class="thumbnail">
+        <h3>{% trans "What Information?" %}</h3>
+        <p>Auskünfte über alle Angelegenheiten ihres Wirkungsbereiches</p>
+        <p><a href="{% url 'foirequest-make_request' %}">{% trans "Make a request!" %}</a></p>
+      </div>
+    </li>
+    <li class="span3">
+      <div class="thumbnail">
+        <h3>{% trans "What right?" %}</h3>
+        <p>Das österreichische Auskunftspflichtgetsetz erlaubt ihnen die Anforderung von Auskünften gegenüber der Verwaltung.</p>
+        <p><a href="{{ laws.0.get_absolute_url }}">{% trans "Get to know your right!" %}</a></p>
+      </div>
+    </li>
+  </ul>
+</div>
+
+<div class="row">
+  <div class="span8">
+  </div>
+  <div class="span4">
+    {% if foirequests %}
+    <h3>Anfragen</h3>
+    {% for foirequest in foirequests %}
+      <p>An <a href="{{ foirequest.public_body.get_absolute_url }}">{{ foirequest.public_body.name }}</a>:<br/>
+      "{{ foirequest.title }}" - <a title="{{ foirequest.title }}" href="{{ foirequest.get_absolute_url }}">zur Anfrage</a></p>
+    {% endfor %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

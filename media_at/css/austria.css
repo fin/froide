@@ -1,0 +1,71 @@
+body {
+    font-family: 'Ubuntu',Tahoma,sans-serif;
+}
+
+.navbar .nav>li>a {
+    border-right: none;
+}
+
+.navbar-static-top {
+    margin-bottom: 20px;
+}
+.navbar-inner {
+    max-height: 40px;
+}
+
+.brand.tworows h1 {
+    margin-bottom: 0;
+    font-size: 24px;
+    line-height: 23px;
+}
+.brand.tworows .country {
+    font-size: 13px;
+    background: rgb(220,220,220);
+    padding: 2px 5px 1px;
+    border-radius: 5px;
+}
+
+.navbar .brand, .navbar .brand:hover {
+    background-position: 3px 2px;
+    color: white;
+}
+.navbar .brand:hover {
+    opacity: .9;
+}
+.navbar .brand h1 {
+    font-size: inherit;
+    line-height: inherit;
+    font-weight: inherit;
+    margin-right: 1.5em;
+}
+
+.navbar .brand {
+    font-family: inherit;
+}
+
+.special-nav-item a span {
+    border: 2px solid transparent;
+}
+.special-nav-item.active a span,
+.special-nav-item a:hover span {
+    background-color: rgb(0,255,0);
+    border: 2px solid white !important;
+    color: black !important;
+}
+
+.navbar .nav>li.special-nav-item.active>a,
+.navbar .nav>li.special-nav-item>a:hover {
+    background: transparent;
+}
+
+.navbar .nav > li > a:hover {
+    color: white;
+}
+
+.navbar .nav>li.dropdown>a {
+    padding: 0;
+}
+
+.navbar .nav>li.dropdown {
+    margin-top: -10px;
+}

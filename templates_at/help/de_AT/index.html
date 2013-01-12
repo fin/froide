@@ -1,0 +1,53 @@
+{% extends "help/base.html" %}
+{% load url from future %}
+
+{% block helpbody %}
+<h2>FragDenStaat.at - Hilfe</h2>
+
+<h3>Wozu dient FragDenStaat.at?</h3>
+
+<p>FragDenStaat.at möchte Sie dabei unterstützen, auf amtliche Informationen von deutschen Bundesbehörden zuzugreifen. Hierfür veröffentlicht FragDenStaat.at Anfragen nach den Informationsgesetzen des Bundes gemeinsam mit den Antworten der Behörden.</p>
+<p>FragDenStaat.at erleichtert es NutzerInnen, sich mit eigenen Informationsanfragen an Bundesbehörden zu wenden: Anfragen können einfach über ein <a href="{% url 'foirequest-make_request' %}">Web-Formular</a> gestellt werden. Die Anfrage wird dann von FragDenStaat.at per E-Mail an die entsprechende Behörde gesendet und gleichzeitig online veröffentlicht. Auch die anschließende Antwort der Behörde wird auf FragDenStaat.at öffentlich einsehbar gemacht.</p>
+<p>Durch die Veröffentlichung der Antworten wird FragDenStaat.at zu einer Sammelstelle für amtliche Informationen. Außerdem dient die Veröffentlichung des Frage- und Antworthergangs dazu, die Antwortpraxis der Behörden transparent kontrollieren zu können.</p>
+<p>Das Portal soll auch für investigative JournalistInnen und Nichtregierungsorganisationen nützlich sein: Anfragen können nicht-öffentlich gestellt und erst zu einem späteren Zeitpunkt veröffentlicht werden. Dadurch wird die exklusive Nutzung von Informationen gewahrt. Gleichzeitig kann die Webseite als Quelle angegeben werden.</p>
+
+<h3>Wie funktioniert die Seite?</h3>
+<p>Diese Seite sammelt amtliche Informationen, zu denen Bundesbehörden auf Anfrage von BürgerInnen Zugang gewährt haben. NutzerInnen können Anfragen von BürgerInnen und die dazugehörigen Antworten der Behörden in der Rubrik <a href="{% url 'foirequest-list' %}">Anfragen</a> durchstöbern oder mit Hilfe der Suchfunktion nach Schlagworten durchsuchen.</p>
+<p>Für den Fall, dass zu einem Sachverhalt noch keine Dokumente vorliegen, stellt diese Seite ein <a href="{% url 'foirequest-make_request' %}">Web-Formular</a> bereit, über das NutzerInnen selbst Anfragen an Behörden richten können. Als NutzerIn wählen Sie hierbei zunächst die Bundesbehörde aus, an die sich Ihre Informationsanfrage richten soll und schreiben dann Ihre Anfrage – ein formaler Rahmentext mit rechtlichen Hinweisen an die Behörde wurde dabei schon für Sie vorformuliert.</p>
+<p>Anschließend sendet FragDenStaat.at Ihre Anfrage von einer @fragdenstaat.at-Absendeadresse an die Behörde und legt gleichzeitig für den Anfragevorgang ein Dossier an, in dem Ihre Anfrage und die zukünftige Korrespondenz mit der Behörde für alle einsehbar veröffentlicht wird. Alle Dossiers finden Sie in der Rubrik <a href="{% url 'foirequest-list' %}">Anfragen</a>. Sollten Sie Ihre erste Anfrage stellen und sich zuvor noch nicht auf FragDenStaat.at angemeldet haben, wird nun ein Account für Sie angelegt. Wenn bei FragDenStaat.at eine Antwort der Behörde eingeht, werden Sie darüber automatisch per E-Mail benachrichtigt.</p>
+<p>Als AnfragestellerIn haben Sie administrative Rechte für Ihr Anfrage-Dossier. So können Sie den „Status“ der Anfrage neu einstellen, wenn eine Antwort eingegangen ist und etwaige weitere Nachrichten, die Ihre Anfrage betreffen, an die Behörde senden.</p>
+<p>Auch NutzerInnen, die keine eigene Anfrage stellen möchten, können sich auf dieser Seite anmelden, um vorhandene Anfragen zu kommentieren und anderen NutzerInnen Vorschläge zu ihren Anfragen zu machen.</p>
+
+<h3>Warum sollte ich FragDenStaat.at nutzen?</h3>
+
+<p>Die zugrunde liegende Idee: Wir als BürgerInnen haben das Recht (und die Pflicht), unsere Regierung zu kontrollieren. Je mehr Informationen uns zu Regierungspraktiken vorliegen, desto besser können wir uns einbringen, konstruktive Kritik üben oder Lob aussprechen.</p>
+
+<h3>Aus welchem Grund sollte eine Behörde auf meine Anfrage reagieren?</h3>
+
+<p>Nach dem Informationsfreiheitsgesetz (IFG) des Bundes ist eine Bundesbehörde verpflichtet, auf Ihren Antrag auf Informationszugang zu antworten. Die Antwort wird entweder die gewünschten Informationen umfassen oder einen rechtlich gültigen Grund nennen, warum kein Zugang zu den Informationen gewährt werden kann. Eine dritte Antwortmöglichkeit wäre, dass der Behörde die angefragten Informationen nicht vorliegen.</p>
+
+<h3>Wer steht hinter FragDenStaat.at?</h3>
+
+<p>Die Seite FragDenStaat.at wird von der TODO betrieben. Die TODO versteht sich als aktiver Teil der österreichischen und europäischen Zivilgesellschaft.</p>
+
+<h3>Wer hat FragDenStaat.at entwickelt?</h3>
+
+<p>Die Software für FragDenStaat.at hat <a href="http://stefanwehrmeyer.com">Stefan Wehrmeyer</a> nach dem Vorbild der Seite “What do they know” neu geschrieben und online gestellt. Die Software heißt <a href="https://github.com/stefanw/froide">Froide, steht unter der MIT Lizenz und kann von GitHub heruntergeladen werden</a>.</p>
+
+<p>Betrieben wird das Projekt derzeit rein ehrenamtlich und auf technischer Infrastruktur, die TODO kostenfrei zur Verfügung stellt.</p>
+
+<h3>Wer unterstützt FragDenStaat.at?</h3>
+
+<p>TODO</p>
+
+<hr/>
+
+<p>Weiterführende Fragen und Antworten zu den folgenden Themen:<p>
+<ul>
+  <li><a href="{% url 'help-making_requests' %}">Informationsfreiheitsanfragen stellen auf FragDenStaat.at</a></li>
+  <li><a href="{% url 'help-your_privacy' %}">Fragen und Antworten zu Ihrer Privatsphäre auf FragDenStaat.at</a></li>
+  <li><a href="{% url 'help-foi_officers' %}">Informationen für Behördenmitarbeiter</a></li>
+</ul>
+
+
+{% endblock %}
