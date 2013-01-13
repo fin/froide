@@ -65,7 +65,3 @@ body {
 .navbar .nav>li.dropdown>a {
     padding: 0;
 }
-
-.navbar .nav>li.dropdown {
-    margin-top: -10px;
-}
