@@ -71,7 +71,6 @@
             {% if user.is_authenticated %}
             <li class="dropdown">
               <a href="#" class="account-snippet" data-toggle="dropdown">
-                <img width="30" src="{% gravatar_url user.email 30 %}" alt="{{ user.get_full_name }}"/>
                 <p class="account-name">{{ user.first_name|truncatechars:12 }}<br/>
                   {{ user.last_name|truncatechars:12 }}
                   <b class="caret"></b>
