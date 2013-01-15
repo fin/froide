@@ -4093,8 +4093,8 @@ msgid ""
 "com\">Stefan Wehrmeyer</a>. If you want to support Froide, please visit the "
 "<a href=\"%(url)s\">repository on GitHub</a>."
 msgstr ""
-"FragDenStaat.at ist ein gemeinnütziges Projekt der <a href=\"%(url)s"
-"\">INSERT TRÄGER HERE</a>"
+"FragDenStaat.at ist ein gemeinnütziges Projekt von <a href=\"%(url)s"
+"\">FOI Austria - der Organisation für Informationsfreiheit</a>"
 
 #: templates/base.html:142
 msgid "About"

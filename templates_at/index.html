@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load url from future %}
+
+{% block banner %}
+    {% include "fundingnotice.html" %}
+{% endblock %}
+
+{% block body %}
+
+<div class="heroine-unit" id="main-folders">
+  <div class="row">
+    <div class="span6">
+      <h1>{{ SITE_NAME }}!</h1>
+      <p>Diese Seite hilft Ihnen Anfragen an Österreichs Behörden zu richten, die sich auf das österreichische Auskunftspflichtgesetz stützen.</p>
+      <br/>
+      <form method="get" action="{% url 'foirequest-search' %}" class="form-search">
+        <label>{% blocktrans %}Search {{ foicount }} requests and {{ pbcount }} public bodies:{% endblocktrans %}</label>
+        <div class="input-append">
+          <input class="input-medium search-query span3" type="text" name="q" autocomplete="off"/>
+          <button class="btn btn-primary btn-success" type="submit"><i class="icon-white icon-search"></i> {% blocktrans %}Search For Information{% endblocktrans %}</button>
+        </div>
+        <span class="help-block">
+          {% blocktrans %}Try the following:{% endblocktrans %} 
+          <a href="{% url 'foirequest-search' %}?q={% trans "Nuclear" %}">{% trans "Nuclear" %}</a>
+          {% trans "or" %}
+          <a href="{% url 'foirequest-search' %}?q={% trans "Employment" %}">{% trans "Employment" %}</a>
+        </span>
+      </form>
+    </div>
+    <div class="span5">
+      <div id="main-foirequests" class="well">
+        {% if featured %}
+        <div class="frontpage-teaser">
+          <h3>{{ featured.title }}</h3>
+          <p>
+            {{ featured.text|truncatewords:55|linebreaksbr }}
+          </p>
+          {% if featured.url %}
+            <p>
+              <a href="{{ featured.url }}"><i class="icon-bullhorn"></i> {% blocktrans %}Read the blog post{% endblocktrans %}</a>
+            </p>
+          {% endif %}
+          {% if featured.request %}
+            <p>
+              <a href="{% url 'foirequest-show' slug=featured.request.slug %}"><i class="icon-envelope"></i> {% blocktrans %}Visit this request{% endblocktrans %}</a>
+            </p>
+          {% endif %}
+        </div>
+        {% else %}
+        <div id="sample-letter" class="frontpage-teaser">{% blocktrans %}Freedom of Information Request
+
+    To: Ministry of Interior
+
+    Dear Sir or Madam,
+    I request information about the following:
+    ...{% endblocktrans %}
+      <a class="make-request-icon" href="{% url 'foirequest-make_request' %}">{% blocktrans %}Write a Request Now!{% endblocktrans %}</a>
+      </div>
+      {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="span6">
+    <h3>Was ist das Auskunftspflichtgesetz?</h3>
+    <p>Jeder Bürger hat gemäß Auskunftspflichtgesezt von 1987 das Recht Fragen an die Verwaltung zu richten. Diese müssen innerhalb von 8 Wochen beantwortet werden.
+    <br/>
+     <a class="target-new" href="https://de.wikipedia.org/wiki/Auskunftspflichtgesetz">Erfahren Sie mehr über das österreichische Auskunftspflichtgesetz</a>
+     </p><br />
+    <h3>Ist das Auskunftspflichtgesetz ein Informationsfreiheitsgesetz?</h3>
+    <p>Nein, das Österreichische Auskunftspflichtgesetz ist kein Informationsfreiheitsgesetz im eigentlichen Sinn, da nur Auskünfte, nicht Einsicht in Akten geregelt wurde. Außerdem ist ihm der Grundsatz der Amtsverschwiegenheit übergeordnet und gibt weite Ausnahmeregelungen: So brauchen Behörden nicht zu antworten, wenn es zu viel Aufwand wäre oder die Anfrage "mutwillig" gestellt wird. Einen Versuch ist es aber auf jeden Fall wert.
+     <a class="target-new" href="http://de.wikipedia.org/wiki/Informationsfreiheit">{% blocktrans %}Read more about the Freedom of Information!{% endblocktrans %}</a>
+    </p>
+  </div>
+
+  <div class="span6">
+    <h3>{% blocktrans %}What does this site do?{% endblocktrans %}</h3>
+    <p>Diese Seite veröffentlicht die Anfragen nach dem Auskunftspflichtgesetz und ihre Antworten, so dass der Vorgang durch die Öffentlichkeit geprüft werden kann.
+    <br/>
+     <a href="{% url 'help-index' %}">{% blocktrans %}Read more about the concept!{% endblocktrans %}</a>
+     </p><br />
+     <h3>Was passiert mit abgelehnten Anfragen?</h3>
+     <p>Viele Anfragen werden in Österreich leider immer noch abgelehnt. Österreich ist das einzige Land der EU-15, in dem das Amtsgeheimnis noch in der Verfassung steht. Abgelehnte Abfragen helfen uns aber zu dokumentieren, wie wichtig ein wirkliches Informationsfreiheitsgesetz wäre.<br />Dafür setzen wir uns ein: Mit <a href="http://transparenzgesetz.at">Transparenzgesetz.at</a> - der unabhängigen Kampagne für ein echtes Transparenzgesetz.</p>
+  </div>
+</div>
+
+<div class="row">
+  <div class="span6">
+    <h3>{% blocktrans %}Successful Requests{% endblocktrans %}</h3>
+    <ul class="unstyled">
+        {% for object in successful_foi_requests %}
+        <li>
+          {% include "foirequest/snippets/request_item.html" %}
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div class="span6">
+    <h3>{% blocktrans %}Unsuccessful Requests{% endblocktrans %}</h3>
+    <ul class="unstyled">
+      {% for object in unsuccessful_foi_requests %}
+        <li>
+          {% include "foirequest/snippets/request_item.html" %}
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endblock %}

@@ -59,3 +59,7 @@
 .navbar .nav>li.dropdown>a {
     padding: 0;
 }
+
+#main-folders {
+    background-image: url('../img/folders_at.jpg');
+}

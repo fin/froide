@@ -126,8 +126,7 @@
     <div class="row">
       <div class="span9">
         <p>
-          {% url 'help-donate' as about_url %}
-          {% blocktrans with url=about_url %}Froide is a free and Open Source Project by <a href="http://stefanwehrmeyer.com">Stefan Wehrmeyer</a>. If you want to support Froide, please visit the <a href="{{url}}">repository on GitHub</a>.{% endblocktrans %}
+          {% blocktrans with url="http://transparenzgesetz.at" %}Froide is a free and Open Source Project by <a href="http://stefanwehrmeyer.com">Stefan Wehrmeyer</a>. If you want to support Froide, please visit the <a href="{{url}}">repository on GitHub</a>.{% endblocktrans %}
         </p>
       </div>
       <div class="span3">
