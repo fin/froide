@@ -4182,8 +4182,8 @@ msgid ""
 "\">the Open Knowledge Foundation</a>. If you want to support Froide, please "
 "visit the <a href=\"%(url)s\">repository on GitHub</a>."
 msgstr ""
-"FragDenStaat.at ist ein gemeinnütziges Projekt von <a href=\"%(url)s\">FOI "
-"Austria - der Organisation für Informationsfreiheit</a>"
+"FragDenStaat.at ist ein gemeinnütziges Projekt von <a href=\"%(url)s\">transparenzgesetz.at"
+" - der Kampagne für ein transparenteres Österreich</a>"
 
 #: templates/base.html:153
 msgid "About"
