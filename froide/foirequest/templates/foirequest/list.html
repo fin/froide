@@ -4,6 +4,7 @@
 {% load pagination_tags %}
 
 {% block extra_head %}
+{{block.super}}
 <link href="./rss/" rel="alternate nofollow" type="application/rss+xml" title="{% blocktrans %}RSS Feed for these requests{% endblocktrans %}">
 <link rel="alternate nofollow" type="application/atom+xml" title="{% blocktrans %}Atom feed for these request{% endblocktrans %}" href="./feed/" />
 {% endblock %}

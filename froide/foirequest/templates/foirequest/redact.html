@@ -8,6 +8,7 @@
 
 
 {% block extra_head %}
+    {{ block.super }}
   <link rel="stylesheet" href="{{ STATIC_URL }}css/pdfviewer.css"/>
     <link rel="resource" type="application/l10n" href="{{ STATIC_URL }}js/libs/pdfviewer/locale.properties"/><!-- PDFJSSCRIPT_REMOVE_CORE -->
 

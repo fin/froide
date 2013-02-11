@@ -12,6 +12,7 @@
 
 
 {% block extra_head %}
+{{block.super}}
 {% if not object.is_foi or object.same_as %}
 <meta name="robots" content="noindex"/>
 {% endif %}
