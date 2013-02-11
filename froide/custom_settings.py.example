@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 import re
 
+from .settings import *  # noqa
+
+# Add your theme to the top of installed apps
+# INSTALLED_APPS = ['your_theme'] + INSTALLED_APPS
+
+
 DEBUG = True
 TEMPLATE_DEBUG = True
 
@@ -39,6 +45,7 @@ CACHES = {
 }
 
 SITE_NAME = "Your Site Name"
+SITE_EMAIL = "info@example.com"
 SITE_URL = 'http://localhost:8000'
 
 rec = re.compile
@@ -51,6 +58,11 @@ SECRET_URLS = {
     "sentry": "sentry",
     "databrows": "databrowse"
 }
+
+# Possibly set this for https deployments
+# see https://docs.djangoproject.com/en/1.4/ref/settings/#secure-proxy-ssl-header
+# SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTOCOL', 'https')
+
 
 FROIDE_CONFIG = {
     "create_new_publicbody": True,

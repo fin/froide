@@ -1,3 +1,4 @@
+import base64
 import random
 from datetime import timedelta
 import json
@@ -299,8 +300,11 @@ class FoiRequest(models.Model):
     def messages(self):
         if not hasattr(self, "_messages") or \
                 self._messages is None:
-            self._messages = list(self.foimessage_set.select_related("sender_user", "sender_user__profile",
-                    "sender_public_body").order_by("timestamp"))
+            self._messages = list(self.foimessage_set.select_related(
+                "sender_user",
+                "sender_user__profile",
+                "sender_public_body",
+                "recipient_public_body").order_by("timestamp"))
         return self._messages
 
     @property
@@ -443,7 +447,7 @@ class FoiRequest(models.Model):
             return
         self.status = self.MESSAGE_STATUS_TO_REQUEST_STATUS.get(data['status'], data['status'])
         message = self.message_needs_status()
-        self.costs = data['costs']
+        self.costs = data.get('costs',0)
         if data['status'] == "refused" or data['status'] == "partially_successful":
             self.refusal_reason = data['refusal_reason']
         else:
@@ -582,6 +586,7 @@ Sincerely yours
             if att.name is None:
                 att.name = _("attached_file_%d") % i
             att.name = re.sub('[^\w\.\-]', '', att.name)
+            att.name = att.name[:255]
             if att.name.endswith('pdf') or 'pdf' in att.filetype:
                 has_pdf = True
             attachment._committed = False
@@ -1124,7 +1129,7 @@ class FoiAttachment(models.Model):
     belongs_to = models.ForeignKey(FoiMessage, null=True,
             verbose_name=_("Belongs to request"))
     name = models.CharField(_("Name"), max_length=255)
-    file = models.FileField(_("File"), upload_to=upload_to)
+    file = models.FileField(_("File"), upload_to=upload_to, max_length=255)
     size = models.IntegerField(_("Size"), blank=True, null=True)
     filetype = models.CharField(_("File type"), blank=True, max_length=100)
     format = models.CharField(_("Format"), blank=True, max_length=100)
@@ -1290,7 +1295,7 @@ class FoiEvent(models.Model):
 
     def get_html_id(self):
         # Translators: Hash part of Event URL
-        return "%s-%d" % (_("event"), self.id)
+        return u"%s-%d" % (unicode(_("event")), self.id)
 
     def get_absolute_url(self):
         return "%s#%s" % (self.request.get_absolute_url(),
@@ -1339,6 +1344,35 @@ class FoiEvent(models.Model):
 
     def as_html(self):
         return mark_safe(self.event_texts[self.event_name] % self.get_html_context())
+
+
+class DeferredMessage(models.Model):
+    recipient = models.CharField(max_length=255, blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    request = models.ForeignKey(FoiRequest, null=True, blank=True)
+    mail = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ('timestamp',)
+        get_latest_by = 'timestamp'
+        verbose_name = _('Undelivered Message')
+        verbose_name_plural = _('Undelivered Messages')
+
+    def __unicode__(self):
+        return _(u"Undelievered Message to %(recipient)s (%(request)s)") % {
+            'recipient': self.recipient,
+            'request': self.request
+        }
+
+    def redeliver(self, request):
+        from .tasks import process_mail
+
+        self.request = request
+        self.save()
+        mail = base64.b64decode(self.mail)
+        mail = mail.replace(self.recipient, self.request.secret_address)
+        process_mail.delay(mail.encode('utf-8'))
+
 
 # Import Signals here so models are available
 import froide.foirequest.signals  # noqa
