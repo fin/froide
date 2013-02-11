@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: froide-2.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2013-02-07 16:11+0100\n"
+"POT-Creation-Date: 2013-02-11 15:50+0100\n"
 "PO-Revision-Date: 2013-02-07 16:14+0100\n"
 "Last-Translator: Stefan Wehrmeyer <mail@stefanwehrmeyer.com>\n"
 "Language-Team: OKF-DE <info@fragdenstaat.de>\n"
@@ -4205,6 +4205,18 @@ msgstr "Nutzungsbedingungen"
 msgid "Privacy Statement"
 msgstr "Datenschutzerklärung"
 
+#: templates/fundingnotice.html:7
+msgid "Like this? Consider supporting us!"
+msgstr "FragDenStaat.de braucht Deine Unterstützung!"
+
+#: templates/fundingnotice.html:8
+msgid "Donate now!"
+msgstr "Jetzt spenden!"
+
+#: templates/fundingnotice.html:12
+msgid "Flattr us!"
+msgstr "Flattr uns!"
+
 #: templates/index.html:15
 msgid ""
 "This site publishes Freedom of Information requests and helps you to make "
@@ -4422,8 +4434,9 @@ msgstr "Stellen Sie jetzt eine Informationsfreiheitsanfrage!"
 #~ "diesen Dokumenten zu erhalten, die wir nicht veröffentlichen dürfen."
 
 #~ msgid ""
-#~ "Please remove the following personally identifying information of %(name)"
-#~ "s:<br/><strong>address and email address</strong>. You can leave the name."
+#~ "Please remove the following personally identifying information of "
+#~ "%(name)s:<br/><strong>address and email address</strong>. You can leave "
+#~ "the name."
 #~ msgstr ""
 #~ "Bitte entfernen Sie die folgenden personenbezogenen Daten von %(name)s:"
 #~ "<br/><strong>Adresse und Emailadresse</strong>. Sie können den Namen "
@@ -4460,15 +4473,6 @@ msgstr "Stellen Sie jetzt eine Informationsfreiheitsanfrage!"
 
 #~ msgid "Impressum"
 #~ msgstr "Impressum"
-
-#~ msgid "Like this? Consider supporting us!"
-#~ msgstr "FragDenStaat.de braucht Deine Unterstützung!"
-
-#~ msgid "Donate now!"
-#~ msgstr "Jetzt spenden!"
-
-#~ msgid "Flattr us!"
-#~ msgstr "Flattr uns!"
 
 #~ msgid "Denied?"
 #~ msgstr "Anfrage abgelehnt?"

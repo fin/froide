@@ -1,69 +1,11 @@
-{% extends 'base.html' %}
+{% overextends 'index.html' %}
 {% load i18n %}
 {% load url from future %}
 
-{% block banner %}
-    {% include "fundingnotice.html" %}
+{% block index_banner %}
 {% endblock %}
 
-{% block body %}
-
-<div class="heroine-unit" id="main-folders">
-  <div class="row">
-    <div class="span6">
-      <h1>{{ SITE_NAME }}!</h1>
-      <p>Diese Seite hilft Ihnen Anfragen an Österreichs Behörden zu richten, die sich auf das österreichische Auskunftspflichtgesetz stützen.</p>
-      <br/>
-      <form method="get" action="{% url 'foirequest-search' %}" class="form-search">
-        <label>{% blocktrans %}Search {{ foicount }} requests and {{ pbcount }} public bodies:{% endblocktrans %}</label>
-        <div class="input-append">
-          <input class="input-medium search-query span3" type="text" name="q" autocomplete="off"/>
-          <button class="btn btn-primary btn-success" type="submit"><i class="icon-white icon-search"></i> {% blocktrans %}Search For Information{% endblocktrans %}</button>
-        </div>
-        <span class="help-block">
-          {% blocktrans %}Try the following:{% endblocktrans %} 
-          <a href="{% url 'foirequest-search' %}?q={% trans "Nuclear" %}">{% trans "Nuclear" %}</a>
-          {% trans "or" %}
-          <a href="{% url 'foirequest-search' %}?q={% trans "Employment" %}">{% trans "Employment" %}</a>
-        </span>
-      </form>
-    </div>
-    <div class="span5">
-      <div id="main-foirequests" class="well">
-        {% if featured %}
-        <div class="frontpage-teaser">
-          <h3>{{ featured.title }}</h3>
-          <p>
-            {{ featured.text|truncatewords:55|linebreaksbr }}
-          </p>
-          {% if featured.url %}
-            <p>
-              <a href="{{ featured.url }}"><i class="icon-bullhorn"></i> {% blocktrans %}Read the blog post{% endblocktrans %}</a>
-            </p>
-          {% endif %}
-          {% if featured.request %}
-            <p>
-              <a href="{% url 'foirequest-show' slug=featured.request.slug %}"><i class="icon-envelope"></i> {% blocktrans %}Visit this request{% endblocktrans %}</a>
-            </p>
-          {% endif %}
-        </div>
-        {% else %}
-        <div id="sample-letter" class="frontpage-teaser">{% blocktrans %}Freedom of Information Request
-
-    To: Ministry of Interior
-
-    Dear Sir or Madam,
-    I request information about the following:
-    ...{% endblocktrans %}
-      <a class="make-request-icon" href="{% url 'foirequest-make_request' %}">{% blocktrans %}Write a Request Now!{% endblocktrans %}</a>
-      </div>
-      {% endif %}
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="row">
+{% comment %}<div class="row">
   <div class="span6">
     <h3>Was ist das Auskunftspflichtgesetz?</h3>
     <p>Jeder Bürger hat gemäß Auskunftspflichtgesezt von 1987 das Recht Fragen an die Verwaltung zu richten. Diese müssen innerhalb von 8 Wochen beantwortet werden.
@@ -109,4 +51,4 @@
     </ul>
   </div>
 </div>
-{% endblock %}
+{% endcomment %}

@@ -232,6 +232,7 @@ Froide.app.performReview = (function(){
         $("#review-subject").text($("#id_subject").val());
         text = resolve_forms($('#letter_start').clone());
         text += '\n\n<div class="highlight">' + $("#id_body").val() + "</div>\n\n";
+        text += $('#letter_end').text()+'\n\n';
         text += $('#letter-greeting').text();
         text += "\n" + getFullName();
         text += "\n\n" + getAddress();
@@ -439,6 +440,23 @@ $(function(){
         $('.nav a[href="' + e.target.hash + '"]').closest('.nav').find('li').removeClass("active");
         $('.nav a[href="' + e.target.hash + '"]').parent().addClass("active");
     };
+
+    $('form.ajaxified').submit(function(e){
+        e.preventDefault();
+        var form = $(this);
+        $.ajax({
+            type: form.attr('method'),
+            url: form.attr('action'),
+            data: form.serialize(),
+            success: function(response) {
+                var id = form.attr('id');
+                form.hide();
+                $('#' + id + '-success').fadeIn();
+            }
+        });
+        form.find('button').attr('disabled', 'disabled');
+        form.find('input').attr('disabled', 'disabled');
+    });
 
     $('.btn').on('touchend', function(){ $(this).click(); });
 

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2013-02-07 16:11+0100\n"
+"POT-Creation-Date: 2013-02-11 15:50+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -3796,6 +3796,18 @@ msgstr ""
 
 #: templates/base.html:163
 msgid "Privacy Statement"
+msgstr ""
+
+#: templates/fundingnotice.html:7
+msgid "Like this? Consider supporting us!"
+msgstr ""
+
+#: templates/fundingnotice.html:8
+msgid "Donate now!"
+msgstr ""
+
+#: templates/fundingnotice.html:12
+msgid "Flattr us!"
 msgstr ""
 
 #: templates/index.html:15
