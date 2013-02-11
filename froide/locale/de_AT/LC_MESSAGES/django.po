@@ -4177,7 +4177,6 @@ msgid "Log In / Sign up"
 msgstr "Einloggen / Anmelden"
 
 #: templates/base.html:136
-#, fuzzy, python-format
 msgid ""
 "Froide is a free and Open Source Project by <a href=\"http://www.okfn.org"
 "\">the Open Knowledge Foundation</a>. If you want to support Froide, please "
