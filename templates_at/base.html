@@ -1,4 +1,5 @@
 {% overextends "base.html" %}
+{% block sitetitle %}{{block.super}} <span style="font-size: .9em; color: rgb(230,230,230);">beta</span>{% endblock %}
 {% block extra_head %}
 <link href="{{ STATIC_URL }}css/austria.css" rel="stylesheet">
 {% endblock %}

@@ -52,7 +52,7 @@
           <span class="icon-bar"></span>
         </button>
         <a href="{% url 'index' %}" class="brand">
-          <h1>{{ SITE_NAME }}</h1>
+            <h1>{% block sitetitle %}{{ SITE_NAME }}{% endblock %}</h1>
         </a>
         <div class="nav-collapse collapse">
           <ul class="nav">
