@@ -3873,7 +3873,7 @@ msgstr "oder"
 
 #: publicbody/templates/publicbody/_chooser.html:19
 msgid "Ministry of Labour"
-msgstr "Bundesministerium für Arbeit"
+msgstr "Bundesministerium für Inneres"
 
 #: publicbody/templates/publicbody/_chooser.html:20
 msgid "Write to us if a public body is missing"
