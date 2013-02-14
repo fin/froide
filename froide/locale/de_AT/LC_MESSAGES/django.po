@@ -4142,7 +4142,7 @@ msgstr ""
 msgid ""
 "%(site)s helps you to make freedom of information requests to public bodies"
 msgstr ""
-"%(site)s hilft Ihnen, Informationssanfragen an Behörden zu stellen"
+"%(site)s hilft Ihnen, Informationsanfragen an Behörden zu stellen"
 
 #: templates/base.html:44
 msgid ""
