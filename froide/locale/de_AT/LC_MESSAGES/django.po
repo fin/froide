@@ -4236,11 +4236,11 @@ msgstr "Versuchen Sie:"
 
 #: templates/index.html:28
 msgid "Nuclear"
-msgstr "Atom"
+msgstr "Eurofighter"
 
 #: templates/index.html:30
 msgid "Employment"
-msgstr "Arbeit"
+msgstr "Schulen"
 
 #: templates/index.html:45
 msgid "Read the blog post"
