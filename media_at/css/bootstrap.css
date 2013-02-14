@@ -3640,6 +3640,7 @@ input[type="submit"].btn.btn-mini {
   width: auto;
 }
 .nav-collapse.collapse {
+  background-color: #45aeea;
   height: auto;
   overflow: visible;
 }
