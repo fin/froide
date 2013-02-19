@@ -133,7 +133,7 @@ def list_requests(request, status=None, topic=None, tag=None,
             tag=tag, jurisdiction=jurisdiction)(request)
 
     context.update({
-        'page_title': _("FoI Requests"),
+        'page_title': _("FoI Requests") if not not_foi else _("Non-FoI Requests"),
         'count': foi_requests.count(),
         'not_foi': not_foi,
         'object_list': foi_requests,

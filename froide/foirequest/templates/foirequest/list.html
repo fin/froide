@@ -32,6 +32,11 @@
 {% if filtered and jurisdiction %}
   <p>{% blocktrans with name=jurisdiction.name %}Filtered by requests to Public Bodies in {{ name }}.{% endblocktrans %}</p>
 {% endif %}
+
+{% if not_foi %}
+<p class="alert alert-info">{% trans "We have marked these requests as not being — as selected on the submit page — 'a matter of general interest (Freedom of Information request)'. Contact us if you disagree." %}</p>
+{% endif %}
+
 <div class="row">
   <div class="span8">
     <ul class="unstyled">
