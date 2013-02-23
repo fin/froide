@@ -2954,9 +2954,7 @@ msgid ""
 "This request is not an FoI request. This site is only for requesting "
 "specific information from public bodies."
 msgstr ""
-"Diese Anfrage ist <strong>keine</strong> Anfrage im Sinne der "
-"Informationsgesetze!<br/>Sie müssen nach spezifischen Dokumenten in Behörden "
-"fragen."
+"Diese Anfrage fällt unserer Ansicht nach nicht in die Kategorie \"Informationen aus Dokumenten oder Akten\" wie auf der Anfrageseite beschrieben."
 
 #: foirequest/templates/foirequest/show.html:78
 msgid "Request"
