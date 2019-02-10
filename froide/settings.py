@@ -226,6 +226,7 @@ class Base(Configuration):
         ('es', _('Spanish')),
         ('fi-fi', _('Finnish (Finland)')),
         ('de', _('German')),
+        ('de-at', _('German (Austria)')),
         ('da-dk', _('Danish (Denmark)')),
         ('it', _('Italian')),
         ('pt', _('Portuguese')),

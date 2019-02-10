@@ -306,3 +306,6 @@ class Dev(Base):
     # address in Reply-To header)
     # or can you send from any address you like?
     # FOI_EMAIL_FIXED_FROM_ADDRESS = True
+
+
+    # FROIDE_CSRF_MIDDLEWARE = 'django.middleware.csrf.CsrfViewMiddleware'
