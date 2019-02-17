@@ -1002,55 +1002,49 @@ class RequestTest(TestCase):
     def test_make_same_request(self):
         req = FoiRequest.objects.all()[0]
 
-        fake_mes = factories.FoiMessageFactory.create(not_publishable=True)
-        mes = req.messages[-1]
-
         # req doesn't exist
         response = self.client.post(reverse('foirequest-make_same_request',
                 kwargs={"slug": req.slug + 'blub'}))
         self.assertEqual(response.status_code, 404)
 
-        # message doesn't exist
-        response = self.client.post(reverse('foirequest-make_same_request',
-                kwargs={"slug": req.slug}))
-        self.assertEqual(response.status_code, 404)
-
         # message is publishable
         response = self.client.post(reverse('foirequest-make_same_request',
                 kwargs={"slug": req.slug}))
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 302)
 
-        # message does not belong to request
-        response = self.client.post(reverse('foirequest-make_same_request',
-                kwargs={"slug": req.slug}))
-        self.assertEqual(response.status_code, 400)
+        req.not_publishable = True
+        req.save()
 
         # not loged in, no form
-        mes.not_publishable = True
-        mes.save()
-
-        response = self.client.get(reverse('foirequest-show', kwargs={"slug": req.slug}))
+        response = self.client.get(reverse('foirequest-show', kwargs={
+            "slug": req.slug
+        }))
         self.assertEqual(response.status_code, 200)
 
+        mail.outbox = []
+        user = User.objects.get(username='dummy')
         response = self.client.post(reverse('foirequest-make_same_request',
                 kwargs={"slug": req.slug}))
         self.assertEqual(response.status_code, 400)
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(
+            FoiRequest.objects.filter(same_as=req, user=user).count(), 0
+        )
 
         # user made original request
         self.client.login(email='info@fragdenstaat.de', password='froide')
+
         response = self.client.post(reverse('foirequest-make_same_request',
                 kwargs={"slug": req.slug}))
         self.assertEqual(response.status_code, 400)
 
         # make request
-        mail.outbox = []
         self.client.logout()
         self.client.login(email='dummy@example.org', password='froide')
         response = self.client.post(reverse('foirequest-make_same_request',
                 kwargs={"slug": req.slug}))
         self.assertEqual(response.status_code, 302)
         self.assertEqual(len(mail.outbox), 2)
-        user = User.objects.get(username='dummy')
         same_req = FoiRequest.objects.get(same_as=req, user=user)
         self.assertIn(same_req.get_absolute_url(), response['Location'])
         self.assertEqual(list(req.same_as_set), [same_req])
@@ -1063,8 +1057,6 @@ class RequestTest(TestCase):
         self.assertEqual(response.status_code, 400)
         same_req = FoiRequest.objects.get(same_as=req, user=user)
 
-        same_mes = factories.FoiMessageFactory.create(
-            request=same_req, not_publishable=True)
         self.client.logout()
         self.client.login(email='info@fragdenstaat.de', password='froide')
         response = self.client.post(reverse('foirequest-make_same_request',
@@ -1470,15 +1462,12 @@ class RequestTest(TestCase):
         froide_config = settings.FROIDE_CONFIG
         froide_config['request_throttle'] = [(2, 60), (5, 60 * 60)]
 
-        # pb = PublicBody.objects.all()[0]
-        # user = User.objects.get(username='sw')
-        messages = []
+        requests = []
         for i in range(3):
-            req = factories.FoiRequestFactory(slug='same-as-request-%d' % i)
-            messages.append(
-                factories.FoiMessageFactory.create(
-                    not_publishable=True,
-                    request=req
+            requests.append(
+                factories.FoiRequestFactory(
+                    slug='same-as-request-%d' % i,
+                    not_publishable=True
                 )
             )
 
@@ -1486,9 +1475,9 @@ class RequestTest(TestCase):
 
         with self.settings(FROIDE_CONFIG=froide_config):
 
-            for i, mes in enumerate(messages):
+            for i, req in enumerate(requests):
                 response = self.client.post(reverse('foirequest-make_same_request',
-                        kwargs={"slug": mes.request.slug}))
+                        kwargs={"slug": req.slug}))
                 if i < 2:
                     self.assertEqual(response.status_code, 302)
 

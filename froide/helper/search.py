@@ -129,6 +129,11 @@ def key_getter(item):
     return item['key']
 
 
+class FakeObject():
+    def __getattr__(self, name):
+        return ''
+
+
 def resolve_facet(data, getter=None, label_getter=None,
                   model=None, make_url=None):
     if getter is None:
@@ -144,7 +149,10 @@ def resolve_facet(data, getter=None, label_getter=None,
                 o.pk: o for o in model._default_manager.filter(pk__in=pks)
             }
             for item in info['buckets']:
-                item['object'] = objs[item['key']]
+                if item['key'] in objs:
+                    item['object'] = objs[item['key']]
+                else:
+                    item['object'] = FakeObject()
         for item in info['buckets']:
             item['active'] = getter(item) == data.get(key)
             item['label'] = label_getter(item)

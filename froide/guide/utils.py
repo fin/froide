@@ -82,7 +82,7 @@ class GuidanceApplicator:
             exclude_match = None
             if rule.excludes_re:
                 exclude_match = rule.excludes_re.search(text)
-                if exclude_match is None:
+                if exclude_match is not None:
                     continue
 
             # Rule applies
@@ -181,10 +181,9 @@ def notify_users_generator(gen):
                 send_notifications(notifications)
                 notifications = []
         last_user = message.request.user_id
-        if result.created > 0:
-            notifications.append(
-                (message, result)
-            )
+        notifications.append(
+            (message, result)
+        )
         yield message, result
     send_notifications(notifications)
 

@@ -95,8 +95,12 @@ def delete_all_expired_exports():
     access_tokens.delete()
 
 
-def create_export(user):
+def create_export(user, notification_user=None):
     from froide.accesstoken.models import AccessToken
+
+    if notification_user is not None and notification_user != user:
+        if not notification_user.is_superuser:
+            raise Exception('Can only export user as super user')
 
     access_token, created = AccessToken.objects.get_or_create(
         user=user, purpose=PURPOSE
@@ -104,7 +108,7 @@ def create_export(user):
     token = access_token.token
     if not created:
         delete_export(token)
-        access_token = AccessToken.objects.reset(user, purpose=PURPOSE)
+        token = AccessToken.objects.reset(user, purpose=PURPOSE)
 
     export_file = tempfile.NamedTemporaryFile(delete=False)
     try:
@@ -131,13 +135,21 @@ def create_export(user):
     export_file.close()
     os.remove(export_file.name)
 
-    body = render_to_string('account/emails/export_ready.txt', {
-        'url': settings.SITE_URL + reverse('account-download_export'),
+    if notification_user is None or notification_user == user:
+        email_template = 'account/emails/export_ready.txt'
+        notification_url = settings.SITE_URL + reverse('account-download_export')
+        notification_user = user
+    else:
+        email_template = 'account/emails/export_ready_admin.txt'
+        notification_url = ''
+
+    body = render_to_string(email_template, {
+        'url': notification_url,
         'name': user.get_full_name(),
         'days': EXPORT_MAX_AGE.days,
         'site_name': settings.SITE_NAME
     })
-    send_mail_user(_('Your data export is ready'), body, user)
+    send_mail_user(_('Your data export is ready'), body, notification_user)
 
 
 registry = ExportRegistry()
@@ -155,6 +167,9 @@ def export_user_data(user):
         'profile_text', (
             'profile_photo',
             lambda x: os.path.basename(x.path) if x else None
+        ),
+        (
+            'tags', lambda x: ','.join(str(t) for t in x.all())
         ),
         'is_trusted', 'is_blocked',
         'date_deactivated', 'is_active', 'is_staff',
@@ -221,7 +236,7 @@ def export_user_data(user):
             'accesstokens': [
                 get_dict(a, (
                     'id',
-                    'source_refresh_token',
+                    'source_refresh_token_id',
                     'token',
                     'application_id',
                     'application__name',
