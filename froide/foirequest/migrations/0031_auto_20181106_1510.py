@@ -14,9 +14,12 @@ def deferred_fill_sender(apps, schema_editor):
     DeferredMessage = apps.get_model('foirequest', 'DeferredMessage')
     for deferred in DeferredMessage.objects.all():
         print(deferred.pk)
-        email = parser.parse(BytesIO(base64.b64decode(deferred.mail)))
-        deferred.sender = email.from_[1]
-        deferred.save()
+        try:
+            email = parser.parse(BytesIO(base64.b64decode(deferred.mail)))
+            deferred.sender = email.from_[1]
+            deferred.save()
+        except Exception:
+            print('ascii error')
 
 
 class Migration(migrations.Migration):

@@ -29,17 +29,6 @@ def create_classifications(apps, schema_editor):
     if Classification.objects.all().count() == 0:
         return
 
-    # Fix paths
-    last = None
-    for c in Classification.objects.all():
-        if last is None:
-            last = Classification.get_last_root_node()
-        c.path = last._inc_path()
-        last = c
-        c.depth = 1
-        c.numchild = 0
-        c.save()
-
 
 class Migration(migrations.Migration):
 
