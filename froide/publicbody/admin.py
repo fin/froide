@@ -1,5 +1,9 @@
+import json
+
+from django.db import transaction
 from django.contrib import admin
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
+from django.http import HttpResponse
 from django.core.exceptions import PermissionDenied
 from django.conf import settings
 from django.db.models import Count
@@ -46,8 +50,51 @@ class PublicBodyAdminForm(forms.ModelForm):
 
 ClassificationAssignMixin = make_admin_assign_action('classification')
 
+PublicBodyReplacementBaseMixin = make_admin_assign_action(
+    'root', _('Choose replacement public body')
+)
 
-class PublicBodyBaseAdminMixin(ClassificationAssignMixin, AdminTagAllMixIn):
+
+class PublicBodyReplacementMixin(PublicBodyReplacementBaseMixin):
+    def _get_assign_action_form_class(self, fieldname):
+        return get_fk_form_class(PublicBody, 'root', self.admin_site)
+
+    def _execute_assign_action(self, obj, fieldname, assign_obj):
+        '''
+        Replaces all non-blacklisted FK or M2M relationships
+        that point to obj with assign_obj.
+        Dark magic ahead.
+        '''
+        BLACK_LIST = [
+            CategorizedPublicBody,
+            TaggedPublicBody,
+            PublicBody
+        ]
+        relations = [
+            f for f in PublicBody._meta.get_fields()
+            if (f.one_to_many or f.one_to_one or f.many_to_many) and
+            f.auto_created and not f.concrete
+        ]
+        with transaction.atomic():
+            for rel in relations:
+                model = rel.related_model
+                if model in BLACK_LIST:
+                    continue
+                if rel.many_to_many:
+                    m2m_objs = model.objects.filter(**{rel.field.name: obj})
+                    for m2m_obj in m2m_objs:
+                        m2m_rel = getattr(m2m_obj, rel.field.name)
+                        m2m_rel.remove(obj)
+                        m2m_rel.add(assign_obj)
+                else:
+                    model.objects.filter(**{rel.field.name: obj}).update(
+                        **{rel.field.name: assign_obj}
+                    )
+
+
+class PublicBodyBaseAdminMixin(
+        ClassificationAssignMixin, PublicBodyReplacementMixin,
+        AdminTagAllMixIn):
     form = PublicBodyAdminForm
 
     date_hierarchy = 'updated_at'
@@ -81,7 +128,7 @@ class PublicBodyBaseAdminMixin(ClassificationAssignMixin, AdminTagAllMixIn):
         }),
         (_('Advanced'), {
             'classes': ('collapse',),
-            'fields': ('site', 'number_of_requests', 'website_dump'),
+            'fields': ('site', 'number_of_requests', 'website_dump', 'wikidata_item'),
         }),
         (_('Meta'), {
             'fields': ('_created_by', 'created_at', '_updated_by', 'updated_at'),
@@ -106,9 +153,12 @@ class PublicBodyBaseAdminMixin(ClassificationAssignMixin, AdminTagAllMixIn):
     tag_all_config = ('categories', CATEGORY_AUTOCOMPLETE_URL)
     readonly_fields = ('_created_by', 'created_at', '_updated_by', 'updated_at')
 
-    actions = ClassificationAssignMixin.actions + [
-        'export_csv', 'remove_from_index', 'tag_all', 'show_georegions'
-    ]
+    actions = (
+        ClassificationAssignMixin.actions +
+        PublicBodyReplacementMixin.actions + [
+            'export_csv', 'remove_from_index', 'tag_all', 'show_georegions'
+        ]
+    )
 
     def get_queryset(self, request):
         qs = super(PublicBodyBaseAdminMixin, self).get_queryset(request)
@@ -121,6 +171,9 @@ class PublicBodyBaseAdminMixin(ClassificationAssignMixin, AdminTagAllMixIn):
             url(r'^import/$',
                 self.admin_site.admin_view(self.import_csv),
                 name='publicbody-publicbody-import_csv'),
+            url(r'^geo-match/$',
+                self.admin_site.admin_view(self.geo_match),
+                name='publicbody-publicbody-geo_match'),
         ]
         return my_urls + urls
 
@@ -148,6 +201,49 @@ class PublicBodyBaseAdminMixin(ClassificationAssignMixin, AdminTagAllMixIn):
                 _('Public Bodies were imported.')
             )
         return redirect('admin:publicbody_publicbody_changelist')
+
+    def geo_match(self, request):
+        from froide.georegion.models import GeoRegion
+
+        if request.method == 'POST':
+            if not self.has_change_permission(request):
+                raise PermissionDenied
+
+            data = json.loads(request.body)
+            try:
+                georegion = GeoRegion.objects.get(id=data['georegion'])
+            except GeoRegion.DoesNotExist:
+                return HttpResponse(status=404)
+            try:
+                pb = PublicBody.objects.get(id=data['publicbody'])
+            except PublicBody.DoesNotExist:
+                return HttpResponse(status=404)
+
+            pb.regions.add(georegion)
+            return HttpResponse(status=201, content=b'{}')
+
+        opts = self.model._meta
+        config = {
+            'url': {
+                'listCategories': reverse('api:category-list'),
+                'listClassifications': reverse('api:classification-list'),
+                'listPublicBodies': reverse('api:publicbody-list'),
+                'searchPublicBody': reverse('api:publicbody-search'),
+                'listGeoregion': reverse('api:georegion-list'),
+                'detailGeoregion': reverse('api:georegion-detail', kwargs={'pk': 0}),
+                'detailJurisdiction': reverse('api:jurisdiction-detail', kwargs={'pk': 0}),
+                'georegionAdminUrl': reverse('admin:georegion_georegion_change', kwargs={'object_id': 0}),
+                'publicbodyAdminUrl': reverse('admin:publicbody_publicbody_changelist'),
+                'publicbodyAdminChangeUrl': reverse('admin:publicbody_publicbody_change', kwargs={'object_id': 0}),
+                'publicbodyAddAdminUrl': reverse('admin:publicbody_publicbody_add'),
+            }
+        }
+        ctx = {
+            'app_label': opts.app_label,
+            'opts': opts,
+            'config': json.dumps(config)
+        }
+        return render(request, 'publicbody/admin/match_georegions.html', ctx)
 
     def save_model(self, request, obj, form, change):
         obj._updated_by = request.user

@@ -11,7 +11,7 @@ from froide.foirequest.models import FoiRequest
 from froide.helper.csv_utils import export_csv_response
 from froide.helper.admin_utils import TaggitListFilter
 
-from .models import User, TaggedUser
+from .models import User, TaggedUser, UserTag
 from .services import AccountService
 from .export import get_export_url
 from .tasks import start_export_task
@@ -30,6 +30,14 @@ class CustomUserChangeForm(UserChangeForm):
     class Meta:
         model = User
         fields = '__all__'
+
+
+class UserTagAdmin(admin.ModelAdmin):
+    pass
+
+
+class TaggedUserAdmin(admin.ModelAdmin):
+    raw_id_fields = ('tag', 'content_object')
 
 
 class UserTagsFilter(TaggitListFilter):
@@ -81,8 +89,6 @@ class UserAdmin(DjangoUserAdmin):
         for user in queryset:
             if user.is_active:
                 continue
-            password = User.objects.make_random_password()
-            user.set_password(password)
             foi_request = FoiRequest.objects.filter(
                 user=user,
                 status='awaiting_user_confirmation')
@@ -95,8 +101,7 @@ class UserAdmin(DjangoUserAdmin):
                 foi_request = None
             rows_updated += 1
             AccountService(user).send_confirmation_mail(
-                    request_id=foi_request,
-                    password=password
+                request_id=foi_request,
             )
 
         self.message_user(request, _("%d activation mails sent." % rows_updated))
@@ -195,3 +200,5 @@ class UserAdmin(DjangoUserAdmin):
 
 
 admin.site.register(User, UserAdmin)
+admin.site.register(TaggedUser, TaggedUserAdmin)
+admin.site.register(UserTag, UserTagAdmin)

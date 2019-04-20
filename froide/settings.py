@@ -65,6 +65,7 @@ class Base(Configuration):
         'froide.accesstoken',
         'froide.guide',
         'froide.comments',
+        'froide.campaign',
 
         # API
         'oauth2_provider',
@@ -156,6 +157,21 @@ class Base(Configuration):
     PASSWORD_HASHERS = [
         'django.contrib.auth.hashers.PBKDF2PasswordHasher',
         'froide.account.hashers.PBKDF2WrappedSHA1PasswordHasher',
+    ]
+    MIN_PASSWORD_LENGTH = 9
+    AUTH_PASSWORD_VALIDATORS = [
+        {
+            'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        },
+        {
+            'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+            'OPTIONS': {
+                'min_length': MIN_PASSWORD_LENGTH,
+            }
+        },
+        {
+            'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        },
     ]
 
     # List of finder classes that know how to find static files in
@@ -407,8 +423,8 @@ class Base(Configuration):
             'read:user': _('Access to user status'),
             'read:profile': _('Read user profile information'),
             'read:email': _('Read user email'),
-            'read:request': _('Read my (private) requests'),
-            'make:request': _('Make requests on my behalf'),
+            'read:request': _('Read your (private) requests'),
+            'make:request': _('Make requests on your behalf'),
             'follow:request': _('Follow/Unfollow requests'),
         }
     }

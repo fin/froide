@@ -1,6 +1,7 @@
 import re
 import uuid
 
+from django.db import transaction
 from django.utils import timezone
 from django.urls import reverse
 from django.contrib.auth import get_user_model
@@ -54,7 +55,7 @@ class CreateRequestService(BaseService):
         user_auth = user.is_authenticated
 
         if not user_auth:
-            user, password, user_created = AccountService.create_user(
+            user, user_created = AccountService.create_user(
                 **self.data
             )
             self.data['user'] = user
@@ -79,7 +80,6 @@ class CreateRequestService(BaseService):
             if user_created:
                 AccountService(user).send_confirmation_mail(
                     request_id=foi_object.pk,
-                    password=password,
                     reference=foi_object.reference,
                     redirect_url=self.data.get('redirect_url')
                 )
@@ -282,9 +282,15 @@ class CreateRequestFromProjectService(CreateRequestService):
 
 
 class CreateSameAsRequestService(CreateRequestService):
+    def create_request(self, publicbody, sequence=0):
+        original_request = self.data['original_foirequest']
+        sequence = original_request.same_as_count + 1
+        return super().create_request(publicbody, sequence=sequence)
+
     def pre_save_request(self, request):
         original_request = self.data['original_foirequest']
         request.same_as = original_request
+        request.campaign = original_request.campaign
         request.not_publishable = original_request.not_publishable
 
 
@@ -457,9 +463,15 @@ class ReceiveEmailService(BaseService):
                 att.name = add_number_to_filename(att.name, i)
             names.add(att.name)
 
+            if foirequest.not_publishable:
+                att.can_approve = False
+
             attachment._committed = False
             att.file = File(attachment)
             att.save()
 
             if att.can_convert_to_pdf():
-                convert_attachment_task.delay(att.id)
+                self.trigger_convert_pdf(att.id)
+
+    def trigger_convert_pdf(self, att_id):
+        transaction.on_commit(lambda: convert_attachment_task.delay(att_id))

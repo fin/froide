@@ -120,7 +120,9 @@ def add_postal_message(request, slug):
 @allow_write_foirequest
 def add_postal_reply_attachment(request, foirequest, message_id):
     try:
-        message = FoiMessage.objects.get(request=foirequest, pk=int(message_id))
+        message = FoiMessage.objects.get(
+            request=foirequest, pk=int(message_id)
+        )
     except (ValueError, FoiMessage.DoesNotExist):
         raise Http404
     if not message.is_postal:
@@ -151,13 +153,19 @@ def add_postal_reply_attachment(request, foirequest, message_id):
         updated_count = len(updated)
 
         if updated_count > 0 and not added_count:
-            status_message = _('You updated %d document(s) on this message') % updated_count
+            status_message = _(
+                'You updated %d document(s) on this message'
+            ) % updated_count
         elif updated_count > 0 and added_count > 0:
-            status_message = _('You added %(added)d and updated %(updated)d document(s) on this message') % {
+            status_message = _(
+                'You added %(added)d and updated %(updated)d '
+                'document(s) on this message') % {
                     'updated': updated_count, 'added': added_count
                     }
         elif added_count > 0:
-            status_message = _('You added %d document(s) to this message.') % added_count
+            status_message = _(
+                'You added %d document(s) to this message.'
+            ) % added_count
         messages.add_message(request, messages.SUCCESS, status_message)
         return redirect(message)
 
@@ -191,13 +199,14 @@ def convert_to_pdf(request, foirequest, message, data):
         i += 1
         name = add_number_to_filename(name, i)
 
+    can_approve = not foirequest.not_publishable
     att = FoiAttachment.objects.create(
         name=name,
         belongs_to=message,
         approved=False,
         filetype='application/pdf',
         is_converted=True,
-        can_approve=True,
+        can_approve=can_approve,
     )
 
     FoiAttachment.objects.filter(id__in=att_ids).update(
@@ -209,7 +218,9 @@ def convert_to_pdf(request, foirequest, message, data):
     instructions = [
         instructions[i] for i in att_ids
     ]
-    convert_images_to_pdf_task.delay(att_ids, att.id, instructions)
+    convert_images_to_pdf_task.delay(
+        att_ids, att.id, instructions, can_approve=can_approve
+    )
 
     attachment_data = FoiAttachmentSerializer(att, context={
         'request': request
@@ -220,11 +231,11 @@ def convert_to_pdf(request, foirequest, message, data):
 @allow_write_foirequest
 def upload_attachments(request, foirequest, message_id):
     try:
-        message = FoiMessage.objects.get(request=foirequest, pk=int(message_id))
+        message = FoiMessage.objects.get(
+            request=foirequest, pk=int(message_id)
+        )
     except (ValueError, FoiMessage.DoesNotExist):
         raise Http404
-    if not message.is_postal:
-        return render_400(request)
 
     if request.method == 'POST':
         try:
@@ -248,7 +259,6 @@ def upload_attachments(request, foirequest, message_id):
 
     ctx = {
         'settings': {
-            # 'user_can_hide_web': settings.FROIDE_CONFIG.get('user_can_hide_web')
             'document_filetypes': POSTAL_CONTENT_TYPES,
             'image_filetypes': IMAGE_FILETYPES,
             'pdf_filetypes': PDF_FILETYPES,
@@ -258,8 +268,12 @@ def upload_attachments(request, foirequest, message_id):
             'pdfjsWorker': static('js/pdf.worker.min.js')
         },
         'url': {
-            'getMessage': reverse('api:message-detail', kwargs={'pk': message.id}),
-            'getAttachment': reverse('api:attachment-detail', kwargs={'pk': 0}),
+            'getMessage': reverse('api:message-detail', kwargs={
+                'pk': message.id
+            }),
+            'getAttachment': reverse('api:attachment-detail', kwargs={
+                'pk': 0
+            }),
             'convertAttachments': reverse('foirequest-upload_attachments',
                 kwargs={'slug': foirequest.slug, 'message_id': message.id}),
             'addAttachment': reverse('foirequest-add_postal_reply_attachment',
@@ -267,6 +281,8 @@ def upload_attachments(request, foirequest, message_id):
             'redactAttachment': reverse('foirequest-redact_attachment',
                 kwargs={'slug': foirequest.slug, 'attachment_id': 0}),
             'approveAttachment': reverse('foirequest-approve_attachment',
+                kwargs={'slug': foirequest.slug, 'attachment': 0}),
+            'deleteAttachment': reverse('foirequest-delete_attachment',
                 kwargs={'slug': foirequest.slug, 'attachment': 0}),
         },
         'i18n': {
@@ -282,20 +298,34 @@ def upload_attachments(request, foirequest, message_id):
             'otherAttachments': _('Other attachments that are not documents'),
             'imageDocumentExplanation': _(
                 'Here you can combine your uploaded images to a PDF document. '
-                'You can rearrange the pages and split it into multiple documents. '
+                'You can rearrange the pages and '
+                'split it into multiple documents. '
                 'You can redact the PDF in the next step.'
             ),
-            'documentPending': _('This document is being generated. This can take several minutes.'),
+            'documentPending': _(
+                'This document is being generated. '
+                'This can take several minutes.'
+            ),
+            'documentDeleting': _('This document is being deleted...'),
             'documentTitle': _('Document title'),
             'documentTitlePlaceholder': _('e.g. Letter from date'),
             'showIrrelevantAttachments': _('Show irrelevant attachments'),
+            'makeRelevant': _('Make relevant'),
             'loading': _('Loading...'),
             'review': _('Review'),
             'approve': _('Approve'),
             'notPublic': _('not public'),
             'redacted': _('redacted'),
             'redact': _('Redact'),
+            'delete': _('Delete'),
+            'confirmDelete': _(
+                'Are you sure you want to delete this attachment?'
+            ),
             'protectedOriginal': _('protected original'),
+            'protectedOriginalExplanation': _(
+                'This attachment has been converted to PDF and '
+                'cannot be published.'
+            ),
         }
     }
     request.auth = None

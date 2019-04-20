@@ -1,40 +1,37 @@
 <template>
-  <div class="document mb-3">
+  <div class="document mb-3" :id="attachmentId">
     <div class="card">
       <div class="card-header">
-        <pdf-header :config="config" :document="document"></pdf-header>
+        <file-header :config="config" :document="document"></file-header>
       </div>
       <div class="card-body" :class="{'is-new': document.new}">
         <div v-if="document.uploading" class="progress">
           <div class="progress-bar"
-            :class="{'progress-bar-animated progress-bar-striped': progressUnknown}"
+            :class="{
+              'progress-bar-animated progress-bar-striped': progressAlmostComplete,
+              'bg-info progress-bar-striped': progressUnknown,
+            }"
             :style="{'width': progressPercentLabel}"
             role="progressbar" :aria-valuenow="document.progress"
             aria-valuemin="0" aria-valuemax="100"></div>
         </div>
-        <template v-if="!document.pending">
-          <div class="row">
-            <div class="col-auto">
-              <a :href="document.site_url" target="_blank" class="btn btn-sm btn-light">
-                {{ i18n.openAttachmentPage }}
-              </a>
-              <button class="btn btn-sm btn-light" @click="$emit('loadpdf')">
-                {{ i18n.loadPreview }}
-              </button>
-            </div>
-            <div class="ml-auto col-auto">
-              <pdf-review :config="config" :document="document"
-                @documentupdated="$emit('docupdated', $event)"
-              ></pdf-review>
-            </div>
-          </div>
+        <template v-if="ready">
+          <file-review :config="config" :document="document"
+            @docupdated="updateDocument"
+            @loadpdf="$emit('loadpdf')"
+            @makerelevant="$emit('makerelevant')"
+            :can-preview="true"
+          ></file-review>
         </template>
         <div v-else>
           <div class="spinner-border spinner-border-sm" role="status">
             <span class="sr-only">{{ i18n.loading }}</span>
           </div>
-          <p>
+          <p v-if="document.pending">
             {{ i18n.documentPending }}
+          </p>
+          <p v-if="document.deleting">
+            {{ i18n.documentDeleting }}
           </p>
         </div>
       </div>
@@ -44,24 +41,24 @@
 
 <script>
 import I18nMixin from '../../lib/i18n-mixin'
+import DocumentMixin from './lib/document_mixin'
 
-import PdfReview from './pdf-review.vue'
-import PdfHeader from './pdf-header.vue'
+import FileReview from './file-review.vue'
+import FileHeader from './file-header.vue'
 
 const range = (len) => [...Array(len).keys()]
 
 export default {
-  name: 'pdf-document',
-  mixins: [I18nMixin],
+  name: 'file-document',
+  mixins: [I18nMixin, DocumentMixin],
   props: ['config', 'document'],
   components: {
-    PdfReview, PdfHeader
+    FileReview, FileHeader
   },
   data () {
     return {
         progressTotal: null,
         progressCurrent: null,
-        ready: false,
         pdf: null,
         numPages: null,
         pdfPages: []
@@ -79,6 +76,12 @@ export default {
     pages () {
       return this.document.pages
     },
+    ready () {
+      return !this.document.pending && !this.document.deleting
+    },
+    progressAlmostComplete () {
+      return !this.progressUnknown && this.document.progress === this.document.progressTotal
+    },
     progressUnknown () {
       return this.progressPercent === null
     },
@@ -93,9 +96,25 @@ export default {
         return `${this.progressPercent}%`
       }
       return '100%'
+    },
+    attachment () {
+      return this.document.attachment
+    },
+    approveUrl () {
+      return this.config.url.approveAttachment.replace('/0/', `/${this.document.id}/`)
+    },
+    attachmentUrl () {
+      return this.config.url.getAttachment.replace('/0/', `/${this.document.id}/`)
+    },
+    deleteUrl () {
+      return this.config.url.deleteAttachment.replace('/0/', `/${this.document.id}/`)
+    },
+    attachmentId () {
+      return `attachment-${this.document.id}`
     }
   },
   methods: {
+
     checkProgress () {
       window.fetch(`/api/v1/attachment/${this.document.id}/`)
         .then(response => response.json()).then((data) => {

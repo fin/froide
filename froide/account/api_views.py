@@ -21,22 +21,42 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         return default
 
 
-class UserDetailSerializer(serializers.HyperlinkedModelSerializer):
+class UserEmailSerializer(UserSerializer):
     class Meta:
         model = User
-        fields = UserSerializer.Meta.fields + ('first_name', 'last_name',)
+        fields = UserSerializer.Meta.fields + ('email',)
 
 
-class UserEmailSerializer(UserSerializer):
+class UserDetailSerializer(UserSerializer):
+    full_name = serializers.SerializerMethodField()
+    profile_photo = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = UserSerializer.Meta.fields + (
+            'first_name', 'last_name', 'full_name', 'username',
+            'profile_photo',
+        )
+
+    def get_full_name(self, obj):
+        return obj.get_full_name()
+
+    def profile_photo(self, obj):
+        if obj.profile_photo:
+            return obj.profile_photo.url
+        return None
+
+
+class UserEmailDetailSerializer(UserDetailSerializer):
     class Meta:
         model = User
         fields = UserDetailSerializer.Meta.fields + ('email',)
 
 
-class UserFullSerializer(UserSerializer):
+class UserFullSerializer(UserEmailDetailSerializer):
     class Meta:
         model = User
-        fields = UserEmailSerializer.Meta.fields + ('address',)
+        fields = UserEmailDetailSerializer.Meta.fields + ('address',)
 
 
 class ProfileView(views.APIView):
@@ -47,9 +67,13 @@ class ProfileView(views.APIView):
         token = request.auth
         user = request.user
         if token:
-            if token.is_valid(['read:email']):
+            has_email = token.is_valid(['read:email'])
+            has_profile = token.is_valid(['read:profile'])
+            if has_email and has_profile:
+                serializer = UserEmailDetailSerializer(user)
+            elif has_email:
                 serializer = UserEmailSerializer(user)
-            elif token.is_valid(['read:profile']):
+            elif has_profile:
                 serializer = UserDetailSerializer(user)
             else:
                 serializer = UserSerializer(user)

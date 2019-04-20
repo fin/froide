@@ -127,6 +127,10 @@ class FroideAPI {
     return this.getJsonForUrl(this.config.url.listClassifications, term, filters)
   }
 
+  listGeoregions (term, filters) {
+    return this.getJsonForUrl(this.config.url.listGeoregions, term, filters)
+  }
+
   searchFoiRequests (term) {
     let query = encodeURIComponent(term)
     let url = this.config.url.searchRequests + '?q=' + query
@@ -163,6 +167,26 @@ function getData (url = '', headers = {}) {
   }).then(response => response.json())
 }
 
+function getAllData (url = '', headers = {}, result = [], progress = null) {
+  return new Promise((resolve, reject) => {
+    getData(url, headers).then((data) => {
+      if (Array.isArray(data.objects)) {
+        result = [...result, ...data.objects]
+      } else {
+        result = [...result, ...data.objects.results]
+      }
+      if (data.meta.next) {
+        if (progress) {
+          progress(result)
+        }
+        getAllData(data.meta.next, headers, result).then(resolve).catch(reject)
+      } else {
+        resolve(result)
+      }
+    })
+  })
+}
+
 function bustCache (url) {
   return window.fetch(url, {
     method: 'GET',
@@ -179,5 +203,6 @@ export {
   FroideAPI,
   postData,
   getData,
+  getAllData,
   bustCache
 }

@@ -18,6 +18,8 @@ from taggit.models import TaggedItemBase
 
 from froide.account.utils import send_mail_user
 from froide.publicbody.models import PublicBody, FoiLaw, Jurisdiction
+from froide.campaign.models import Campaign
+from froide.team.models import Team
 from froide.helper.text_utils import redact_plaintext
 
 from .project import FoiProject
@@ -271,6 +273,8 @@ class FoiRequest(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
             on_delete=models.SET_NULL,
             verbose_name=_("User"))
+    team = models.ForeignKey(Team, null=True, blank=True,
+            on_delete=models.SET_NULL, verbose_name=_("Team"))
 
     first_message = models.DateTimeField(_("Date of first message"),
             blank=True, null=True)
@@ -308,8 +312,16 @@ class FoiRequest(models.Model):
     is_foi = models.BooleanField(_("is FoI request"), default=True)
     closed = models.BooleanField(_('is closed'), default=False)
 
-    jurisdiction = models.ForeignKey(Jurisdiction, verbose_name=_('Jurisdiction'),
-            null=True, on_delete=models.SET_NULL)
+    campaign = models.ForeignKey(
+        Campaign, verbose_name=_('campaign'),
+        null=True, blank=True, on_delete=models.SET_NULL
+    )
+
+    jurisdiction = models.ForeignKey(
+        Jurisdiction,
+        verbose_name=_('Jurisdiction'),
+        null=True, on_delete=models.SET_NULL
+    )
 
     site = models.ForeignKey(Site, null=True,
             on_delete=models.SET_NULL, verbose_name=_("Site"))
@@ -489,7 +501,7 @@ class FoiRequest(models.Model):
         return self.status == 'publicbody_needed'
 
     def awaits_response(self):
-        return self.status == 'awaiting_response'
+        return self.status == 'awaiting_response' or self.status == 'asleep'
 
     def can_be_escalated(self):
         return not self.needs_public_body() and (
@@ -543,8 +555,13 @@ class FoiRequest(models.Model):
         addresses = {}
         for message in reversed(self.messages):
             if message.is_response:
-                if message.sender_email and message.sender_email not in addresses:
-                    addresses[message.sender_email] = message
+                email = (
+                    message.sender_email or
+                    (message.sender_public_body and
+                     message.sender_public_body.email)
+                )
+                if email and email not in addresses:
+                    addresses[email] = message
         return addresses
 
     def get_set_tags_form(self):

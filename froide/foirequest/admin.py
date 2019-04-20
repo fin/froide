@@ -30,7 +30,7 @@ from .models import (
     TaggedMessage, DeferredMessage, TaggedFoiRequest,
     RequestDraft, DeliveryStatus,
 )
-from .tasks import count_same_foirequests, convert_attachment_task
+from .tasks import convert_attachment_task, ocr_pdf_attachment
 from .widgets import AttachmentFileWidget
 
 
@@ -72,6 +72,7 @@ class FoiRequestAdmin(admin.ModelAdmin, AdminTagAllMixIn):
     list_filter = ('jurisdiction', 'first_message', 'last_message', 'status',
         'resolution', 'is_foi', 'checked', 'public', 'visibility',
         'is_blocked', 'not_publishable',
+        'campaign',
         make_nullfilter('same_as', _('Has same request')),
         ('user', ForeignKeyFilter), ('public_body', ForeignKeyFilter),
         ('project', ForeignKeyFilter), FoiRequestTagsFilter,
@@ -88,9 +89,12 @@ class FoiRequestAdmin(admin.ModelAdmin, AdminTagAllMixIn):
         'mark_successfully_resolved', 'mark_refused',
         'tag_all', 'mark_same_as', 'remove_from_index',
         'confirm_request', 'set_visible_to_user', 'unpublish',
-        'add_to_project', 'unblock_request'
+        'add_to_project', 'unblock_request', 'close_requests'
     ]
-    raw_id_fields = ('same_as', 'public_body', 'user', 'project')
+    raw_id_fields = (
+        'same_as', 'public_body', 'user', 'project',
+        'jurisdiction', 'law'
+    )
     save_on_top = True
 
     def request_page(self, obj):
@@ -148,7 +152,11 @@ class FoiRequestAdmin(admin.ModelAdmin, AdminTagAllMixIn):
             if f.is_valid():
                 req = f.cleaned_data['obj']
                 queryset.update(same_as=req)
-                count_same_foirequests.delay(req.id)
+                count = FoiRequest.objects.filter(same_as=req).count()
+                FoiRequest.objects.filter(id=req.id).update(
+                    same_as_count=count
+                )
+
                 self.message_user(request,
                     _("Successfully marked requests as identical."))
                 # Return None to display the change list page again.
@@ -212,6 +220,10 @@ class FoiRequestAdmin(admin.ModelAdmin, AdminTagAllMixIn):
             mes.save()
             mes.force_resend()
     unblock_request.short_description = _("Unblock requests and send first message")
+
+    def close_requests(self, request, queryset):
+        queryset.update(closed=True)
+    close_requests.short_description = _("Close requests")
 
     def add_to_project(self, request, queryset):
         """
@@ -460,7 +472,8 @@ class FoiAttachmentAdmin(admin.ModelAdmin):
     formfield_overrides = {
         models.FileField: {'widget': AttachmentFileWidget},
     }
-    actions = ['approve', 'disapprove', 'cannot_approve', 'convert', 'make_document']
+    actions = ['approve', 'disapprove', 'cannot_approve',
+               'convert', 'ocr_attachment', 'make_document']
 
     def admin_link_message(self, obj):
         return format_html('<a href="{}">{}</a>',
@@ -501,6 +514,11 @@ class FoiAttachmentAdmin(admin.ModelAdmin):
                 count += 1
         self.message_user(request, _("%s document(s) created") % count)
     make_document.short_description = _("Make into document")
+
+    def ocr_attachment(self, request, queryset):
+        for att in queryset:
+            ocr_pdf_attachment(att)
+    ocr_attachment.short_description = _('OCR PDF')
 
 
 class FoiEventAdmin(admin.ModelAdmin):

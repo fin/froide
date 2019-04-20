@@ -31,13 +31,24 @@
     <div class="row toolbar">
       <div v-if="ready" class="btn-toolbar col-lg-12">
         <div class="btn-group mr-1">
-          <button class="btn btn-light" @click="undo" :disabled="!canUndo">
-            <i class="fa fa-undo"></i>
+          <button class="btn btn-light" @click="undo" :disabled="!canUndo" :title="i18n.undo">
+            <i class="fa fa-step-backward"></i>
           </button>
-          <button class="btn btn-light" @click="redo" :disabled="!canRedo">
-            <i class="fa fa-repeat"></i>
+          <button class="btn btn-light" @click="redo" :disabled="!canRedo"
+            data-toggle="tooltip" data-placement="top" :title="i18n.redo">
+            <i class="fa fa-step-forward"></i>
           </button>
         </div>
+
+        <div class="btn-group mr-1">
+          <button class="btn" :class="{'btn-outline-info': !textOnly, 'btn-info': textOnly}" @click.stop="toggleText" :title="i18n.toggleText">
+            <i class="fa fa-align-justify"></i>
+          </button>
+          <button class="btn" :class="{'btn-outline-info': !textDisabled, 'btn-info': textDisabled}" @click.stop="toggleDrawing" :title="i18n.disableText">
+            <i class="fa fa-image"></i>
+          </button>
+        </div>
+
         <div class="btn-group mr-1">
           <button class="pdf-prev btn btn-light" @click="goPrevious" :disabled="!hasPrevious">
             &laquo;
@@ -52,17 +63,8 @@
           </button>
         </div>
 
-        <div class="btn-group mr-1">
-          <button class="btn" :class="{'btn-outline-info': !textOnly, 'btn-info': textOnly}" @click.stop="toggleText" :title="i18n.toggleText">
-            <i class="fa fa-align-justify"></i>
-          </button>
-          <button class="btn" :class="{'btn-outline-info': !textDisabled, 'btn-info': textDisabled}" @click.stop="toggleDrawing" :title="i18n.disableText">
-            <i class="fa fa-image"></i>
-          </button>
-        </div>
-
         <div class="btn-group mr-lg-1 ml-auto mt-1 mt-lg-0">
-          <button class="btn btn-primary" @click="redact">
+          <button class="btn btn-dark" @click="redact">
             <i class="fa fa-paint-brush"></i>
             {{ i18n.redactAndPublish }}
           </button>
@@ -82,8 +84,8 @@
       </div>
     </div>
     <div class="row mt-3">
-      <div class="col-lg-12 overflow-auto">
-        <div :id="containerId" class="redactContainer" :class="{'hide-redacting': working}">
+      <div class="col-lg-12 overflow-auto" ref="containerWrapper">
+        <div :id="containerId" ref="container" class="redactContainer" :class="{'hide-redacting': working}">
           <canvas v-show="!textOnly" :id="canvasId" class="redactLayer"></canvas>
           <canvas v-show="!textOnly" :id="redactCanvasId" class="redactLayer"
             @mousedown="mouseDown"
@@ -160,7 +162,7 @@ export default {
       workingState: 'loading',
       ready: false,
       textOnly: false,
-      textDisabled: false,
+      textDisabled: true,
       scaleFactor: PDF_TO_CSS_UNITS,
       actionsPerPage: {},
       actionIndexPerPage: {},
@@ -215,7 +217,7 @@ export default {
       })
     },
     container () {
-      return document.getElementById(this.containerId)
+      return this.$refs.container
     },
     canvas () {
       return document.getElementById(this.canvasId)
@@ -286,9 +288,13 @@ export default {
         console.log('# Page ' + pageNum)
         this.page = page
         var viewport = page.getViewport(this.scaleFactor)
+        var maxWidth = this.$refs.containerWrapper.offsetWidth
+        if (viewport.width > maxWidth) {
+          this.scaleFactor = maxWidth / viewport.width
+          viewport = page.getViewport(this.scaleFactor)
+        }
         this.viewport = viewport
-        console.log('Size: ' + viewport.width + 'x' + viewport.height)
-        console.log()
+        console.log(this.scaleFactor, 'Size: ' + viewport.width + 'x' + viewport.height, 'at maxwidth', maxWidth)
         var canvas = this.canvas
         canvas.width = viewport.width
         canvas.height = viewport.height
@@ -339,15 +345,11 @@ export default {
     },
     toggleText () {
       this.textOnly = !this.textOnly
-      if (this.textOnly) {
-        this.textDisabled = false
-      }
+      this.textDisabled = !this.textOnly
     },
     toggleDrawing () {
       this.textDisabled = !this.textDisabled
-      if (this.textDisabled) {
-        this.textOnly = false
-      }
+      this.textOnly = !this.textDisabled
     },
     redact () {
       this.$refs.top.scrollIntoView(true)

@@ -16,6 +16,8 @@ from froide.helper.api_utils import (
 )
 from froide.helper.search import SearchQuerySetWrapper
 
+from froide.georegion.models import GeoRegion
+
 from .models import (PublicBody, Category, Jurisdiction, FoiLaw,
                      Classification)
 from .documents import PublicBodyDocument
@@ -327,10 +329,15 @@ class PublicBodySerializer(PublicBodyListSerializer):
 
 class PublicBodyFilter(SearchFilterMixin, filters.FilterSet):
     q = filters.CharFilter(method='search_filter')
-    classification = filters.ModelChoiceFilter(method='classification_filter',
-        queryset=Classification.objects.all())
-    category = filters.ModelMultipleChoiceFilter(method='category_filter',
-        queryset=Category.objects.all())
+    classification = filters.ModelChoiceFilter(
+        method='classification_filter',
+        queryset=Classification.objects.all()
+    )
+    category = filters.ModelMultipleChoiceFilter(
+        method='category_filter',
+        queryset=Category.objects.all()
+    )
+    regions = filters.CharFilter(method='regions_filter')
 
     class Meta:
         model = PublicBody
@@ -348,6 +355,19 @@ class PublicBodyFilter(SearchFilterMixin, filters.FilterSet):
                 categories__in=Category.get_tree(parent=v)
             )
         return queryset
+
+    def regions_filter(self, queryset, name, value):
+        if ',' in value:
+            ids = value.split(',')
+        else:
+            try:
+                region = GeoRegion.objects.get(
+                    id=value
+                )
+                ids = region.get_descendants()
+            except GeoRegion.DoesNotExist:
+                return queryset
+        return queryset.filter(regions__in=ids)
 
 
 class PublicBodyViewSet(OpenRefineReconciliationMixin,
@@ -394,6 +414,9 @@ class PublicBodyViewSet(OpenRefineReconciliationMixin,
             }, {
             'id': 'url',
             'name': 'URL'
+            }, {
+            'id': 'fax',
+            'name': 'Fax'
         }]
         properties_dict = {
             p['id']: p for p in properties
@@ -451,12 +474,13 @@ class PublicBodyViewSet(OpenRefineReconciliationMixin,
                 fields=['name_auto', 'content']
             ))
 
-        filters = {
+        model_filters = {
             'jurisdiction': Jurisdiction,
             'classification': Classification,
-            'categories': Category
+            'categories': Category,
+            'regions': GeoRegion,
         }
-        for key, model in filters.items():
+        for key, model in model_filters.items():
             pks = request.GET.getlist(key)
             if pks:
                 try:
@@ -466,9 +490,18 @@ class PublicBodyViewSet(OpenRefineReconciliationMixin,
                     # Make result set empty, no 0 pk present
                     sqs = sqs.filter(**{key: 0})
 
+        other_filters = {
+            'regions_kind': 'regions_kind'
+        }
+        for key, search_key in other_filters.items():
+            values = request.GET.getlist(key)
+            if values:
+                sqs = sqs.filter(**{search_key: values})
+
         sqs = sqs.add_aggregation([
             'jurisdiction',
             'classification',
-            'categories'
+            'categories',
+            'regions',
         ])
         return sqs

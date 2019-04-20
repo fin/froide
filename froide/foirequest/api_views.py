@@ -62,12 +62,34 @@ def filter_by_user_queryset(request):
     return User.objects.filter(user_filter)
 
 
+def filter_by_authenticated_user_queryset(request):
+    if request is None or not request.user.is_authenticated:
+        return User.objects.none()
+
+    user = request.user
+    token = request.auth
+
+    if not token and user.is_superuser:
+        # Allow superusers complete access
+        return User.objects.all()
+
+    if not token or token.is_valid(['read:request']):
+        # allow filter by own user
+        return User.objects.filter(id=user.id)
+    return User.objects.none()
+
+
 class FoiAttachmentSerializer(serializers.HyperlinkedModelSerializer):
     resource_uri = serializers.HyperlinkedIdentityField(
         view_name='api:attachment-detail',
         lookup_field='pk'
     )
     converted = serializers.HyperlinkedRelatedField(
+        view_name='api:attachment-detail',
+        lookup_field='pk',
+        read_only=True,
+    )
+    redacted = serializers.HyperlinkedRelatedField(
         view_name='api:attachment-detail',
         lookup_field='pk',
         read_only=True,
@@ -98,8 +120,12 @@ class FoiAttachmentSerializer(serializers.HyperlinkedModelSerializer):
         depth = 0
         fields = (
             'resource_uri', 'id', 'belongs_to', 'name', 'filetype',
-            'approved', 'can_approve', 'is_redacted', 'is_converted', 'converted',
-            'size', 'site_url', 'anchor_url', 'file_url', 'pending'
+            'size', 'site_url', 'anchor_url', 'file_url', 'pending',
+            'is_converted', 'converted',
+            'approved', 'can_approve',
+            'redacted', 'is_redacted', 'can_redact',
+            'can_delete',
+            'is_pdf', 'is_image', 'is_irrelevant',
         )
 
     def get_file_url(self, obj):
@@ -337,6 +363,10 @@ class FoiRequestFilter(filters.FilterSet):
     tags = filters.CharFilter(method='tag_filter')
     categories = filters.CharFilter(method='categories_filter')
     reference = filters.CharFilter(method='reference_filter')
+    follower = filters.ModelChoiceFilter(
+        queryset=filter_by_authenticated_user_queryset,
+        method='follower_filter'
+    )
 
     # FIXME: default ordering should be undetermined?
     # ordering = filters.OrderingFilter(
@@ -373,6 +403,9 @@ class FoiRequestFilter(filters.FilterSet):
         return queryset.filter(**{
             'reference__startswith': value,
         })
+
+    def follower_filter(self, queryset, name, value):
+        return queryset.filter(followers__user=value)
 
 
 class CreateOnlyWithScopePermission(TokenHasScope):

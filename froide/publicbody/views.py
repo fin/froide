@@ -5,46 +5,72 @@ from django.conf import settings
 from django.contrib.sitemaps import Sitemap
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.template import TemplateDoesNotExist
-from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from django.views.generic import FormView
 
 from froide.foirequest.models import FoiRequest
 from froide.helper.cache import cache_anonymous_page
+from froide.helper.search.views import BaseSearchView
 
-from .models import PublicBody, Category, FoiLaw, Jurisdiction
+from .models import PublicBody, FoiLaw, Jurisdiction
+from .documents import PublicBodyDocument
 from .forms import PublicBodyProposalForm
+from .filters import PublicBodyFilterSet
 
 
-def index(request, jurisdiction=None, category=None):
-    if jurisdiction is not None:
-        jurisdiction = get_object_or_404(Jurisdiction, slug=jurisdiction)
+FILTER_ORDER = ('jurisdiction', 'category')
+SUB_FILTERS = {
+    'jurisdiction': ('category',)
+}
 
-    if category is not None:
-        category = get_object_or_404(Category, slug=category)
 
-    publicbodies = PublicBody.objects.all()
+def get_active_filters(data):
+    for key in FILTER_ORDER:
+        if not data.get(key):
+            continue
+        yield key
+        sub_filters = SUB_FILTERS.get(key, ())
+        for sub_key in sub_filters:
+            if data.get(sub_key):
+                yield sub_key
+                break
+        break
 
-    if category:
-        publicbodies = publicbodies.filter(categories=category)
-    if jurisdiction:
-        publicbodies = publicbodies.filter(jurisdiction=jurisdiction)
 
-    page = request.GET.get('page')
-    paginator = Paginator(publicbodies, 50)
-    try:
-        publicbodies = paginator.page(page)
-    except PageNotAnInteger:
-        publicbodies = paginator.page(1)
-    except EmptyPage:
-        publicbodies = paginator.page(paginator.num_pages)
+def get_filter_data(filter_kwargs, data):
+    query = {}
+    for key in get_active_filters(filter_kwargs):
+        query[key] = filter_kwargs[key]
+    data.update(query)
+    return data
 
-    return render(request, 'publicbody/list.html', {
-        'object_list': publicbodies,
-        'jurisdictions': Jurisdiction.objects.get_list(),
-        'jurisdiction': jurisdiction,
-        'category': category,
-        'categories': Category.objects.get_category_list(),
-    })
+
+class PublicBodySearch(BaseSearchView):
+    search_name = 'publicbody'
+    template_name = 'publicbody/list.html'
+    model = PublicBody
+    document = PublicBodyDocument
+    filterset = PublicBodyFilterSet
+    search_url_name = 'publicbody-list'
+
+    show_filters = {
+        'jurisdiction', 'category'
+    }
+    advanced_filters = {
+        'jurisdiction', 'category'
+    }
+    object_template = 'publicbody/snippets/publicbody_item.html'
+    has_facets = True
+    facet_config = {
+        'jurisdiction': {
+            'model': Jurisdiction,
+            'getter': lambda x: x['object'].slug,
+            'label_getter': lambda x: x['object'].name,
+            'label': _('jurisdictions'),
+        }
+    }
+
+    def get_filter_data(self, kwargs, get_dict):
+        return get_filter_data(kwargs, get_dict)
 
 
 @cache_anonymous_page(15 * 60)

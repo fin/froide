@@ -6,7 +6,8 @@ from django.views.decorators.http import require_POST
 from django.utils.translation import ugettext_lazy as _
 from django.contrib import messages
 
-from froide.account.forms import NewUserForm
+from froide.account.forms import NewUserForm, AddressForm
+from froide.team.views import AssignTeamView
 from froide.helper.utils import render_400, render_403
 
 from ..models import FoiRequest, FoiEvent
@@ -216,6 +217,9 @@ def make_same_request(request, slug):
             messages.add_message(request, messages.ERROR,
                 _("You already made an identical request"))
             return render_400(request)
+        address_form = AddressForm(request.POST)
+        if address_form.is_valid():
+            address_form.save(user)
 
     throttle_message = check_throttle(request.user, FoiRequest)
     if throttle_message:
@@ -223,7 +227,7 @@ def make_same_request(request, slug):
         return render_400(request)
 
     body = foirequest.description
-    if foirequest.status_is_final:
+    if foirequest.status_is_final():
         body = "{}\n\n{}" .format(
             foirequest.description,
             _('Please see this request on %(site_name)s where you granted access to this information: %(url)s') % {
@@ -240,24 +244,31 @@ def make_same_request(request, slug):
         'public': foirequest.public,
         'original_foirequest': foirequest
     }
+    if request.POST.get('redirect_url'):
+        data['redirect_url'] = request.POST['redirect_url']
+    if request.POST.get('reference'):
+        data['reference'] = request.POST['reference']
 
     if not request.user.is_authenticated:
         data.update(new_user_form.cleaned_data)
 
     service = CreateSameAsRequestService(data)
-    foirequest = service.execute(request)
+    new_foirequest = service.execute(request)
+
+    count = FoiRequest.objects.filter(same_as=foirequest).count()
+    FoiRequest.objects.filter(id=foirequest.id).update(same_as_count=count)
 
     if request.user.is_active:
         messages.add_message(request, messages.SUCCESS,
                 _('You successfully requested this document! '
                   'Your request is displayed below.'))
-        return redirect(foirequest)
+        return redirect(new_foirequest)
     else:
         messages.add_message(request, messages.INFO,
                 _('Please check your inbox for mail from us to '
                   'confirm your mail address.'))
         # user cannot access the request yet!
-        return redirect(get_new_account_url(foirequest))
+        return redirect(get_new_account_url(new_foirequest))
 
 
 @require_POST
@@ -277,3 +288,7 @@ def extend_deadline(request, foirequest):
             _('Deadline has been extended.'))
     FoiEvent.objects.create_event('deadline_extended', foirequest)
     return redirect(foirequest)
+
+
+class SetTeamView(AssignTeamView):
+    model = FoiRequest

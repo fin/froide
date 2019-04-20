@@ -11,6 +11,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 from froide.celery import app as celery_app
 from froide.publicbody.models import PublicBody
 from froide.helper.document import convert_to_pdf, convert_images_to_ocred_pdf
+from froide.document.pdf_utils import PDFProcessor
 
 from .models import FoiRequest, FoiMessage, FoiAttachment, FoiProject
 from .foi_mail import _process_mail, _fetch_mail
@@ -50,16 +51,6 @@ def classification_reminder():
     translation.activate(settings.LANGUAGE_CODE)
     for foirequest in FoiRequest.objects.get_unclassified():
         foirequest.send_classification_reminder()
-
-
-@celery_app.task
-def count_same_foirequests(instance_id):
-    translation.activate(settings.LANGUAGE_CODE)
-    try:
-        count = FoiRequest.objects.filter(same_as_id=instance_id).count()
-        FoiRequest.objects.filter(id=instance_id).update(same_as_count=count)
-    except FoiRequest.DoesNotExist:
-        pass
 
 
 @celery_app.task
@@ -123,7 +114,34 @@ def convert_attachment_task(instance_id):
         att = FoiAttachment.objects.get(pk=instance_id)
     except FoiAttachment.DoesNotExist:
         return
-    return convert_attachment(att)
+    if att.can_convert_to_pdf():
+        return convert_attachment(att)
+
+
+def ocr_pdf_attachment(att):
+    if att.converted:
+        ocred_att = att.converted
+    else:
+        name, ext = os.path.splitext(att.name)
+        name = _('{name}_ocr{ext}').format(name=name, ext='.pdf')
+
+        ocred_att = FoiAttachment.objects.create(
+            name=name,
+            belongs_to=att.belongs_to,
+            approved=False,
+            filetype='application/pdf',
+            is_converted=True,
+            can_approve=att.can_approve,
+        )
+
+    att.converted = ocred_att
+    att.can_approve = False
+    att.approved = False
+    att.save()
+
+    ocr_pdf_task.delay(
+        att.pk, ocred_att.pk,
+    )
 
 
 def convert_attachment(att):
@@ -150,7 +168,8 @@ def convert_attachment(att):
             belongs_to=att.belongs_to,
             approved=False,
             filetype='application/pdf',
-            is_converted=True
+            is_converted=True,
+            can_approve=att.can_approve
         )
 
     new_file = ContentFile(output_bytes)
@@ -165,7 +184,7 @@ def convert_attachment(att):
 
 @celery_app.task(name='froide.foirequest.tasks.convert_images_to_pdf_task',
                  time_limit=60 * 5, soft_time_limit=60 * 4)
-def convert_images_to_pdf_task(att_ids, target_id, instructions):
+def convert_images_to_pdf_task(att_ids, target_id, instructions, can_approve=True):
     att_qs = FoiAttachment.objects.filter(
         id__in=att_ids
     )
@@ -184,8 +203,40 @@ def convert_images_to_pdf_task(att_ids, target_id, instructions):
 
     if pdf_bytes is None:
         att_qs.update(
-            can_approve=True
+            can_approve=can_approve
         )
+        target.delete()
+        return
+
+    new_file = ContentFile(pdf_bytes)
+    target.size = new_file.size
+    target.file.save(target.name, new_file)
+    target.save()
+
+
+@celery_app.task(name='froide.foirequest.tasks.ocr_pdf_task',
+                 time_limit=60 * 5, soft_time_limit=60 * 4)
+def ocr_pdf_task(att_id, target_id, can_approve=True):
+    try:
+        attachment = FoiAttachment.objects.get(pk=att_id)
+    except FoiAttachment.DoesNotExist:
+        return
+    try:
+        target = FoiAttachment.objects.get(pk=target_id)
+    except FoiAttachment.DoesNotExist:
+        return
+
+    processor = PDFProcessor(
+        attachment.file.path, language=settings.LANGUAGE_CODE
+    )
+    try:
+        pdf_bytes = processor.run_ocr(timeout=180)
+    except SoftTimeLimitExceeded:
+        pdf_bytes = None
+
+    if pdf_bytes is None:
+        attachment.can_approve = can_approve
+        attachment.save()
         target.delete()
         return
 

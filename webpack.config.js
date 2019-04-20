@@ -18,7 +18,8 @@ const ENTRY = {
   request: ['./frontend/javascript/request.ts'],
   redact: ['./frontend/javascript/redact.js'],
   tagautocomplete: ['./frontend/javascript/tagautocomplete.ts'],
-  docupload: ['./frontend/javascript/docupload.js']
+  docupload: ['./frontend/javascript/docupload.js'],
+  geomatch: ['./frontend/javascript/geomatch.js']
 }
 
 const EXCLUDE_CHUNKS = [
@@ -47,8 +48,7 @@ const config = {
     extensions: ['.js', '.ts', '.vue', '.json'],
     alias: {
       'vue$': 'vue/dist/vue.runtime.esm.js',
-      'froide': path.resolve('.'),
-      'froide_static': path.resolve('.', 'froide', 'static')
+      'froide': path.resolve('.')
     }
   },
   module: {

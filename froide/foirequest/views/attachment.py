@@ -82,7 +82,10 @@ def approve_attachment(request, slug, attachment):
     att = get_object_or_404(FoiAttachment, id=int(attachment))
     if not att.can_approve and not request.user.is_staff:
         return render_403(request)
-    att.approve_and_save()
+
+    # hard guard against publishing of non publishable requests
+    if not foirequest.not_publishable:
+        att.approve_and_save()
 
     if request.is_ajax():
         if request.content_type == 'application/json':
@@ -94,6 +97,33 @@ def approve_attachment(request, slug, attachment):
     messages.add_message(request, messages.SUCCESS,
             _('Attachment approved.'))
     return redirect(att.get_anchor_url())
+
+
+@require_POST
+def delete_attachment(request, slug, attachment):
+    foirequest = get_object_or_404(FoiRequest, slug=slug)
+
+    if not can_write_foirequest(foirequest, request):
+        return render_403(request)
+    att = get_object_or_404(FoiAttachment, id=int(attachment))
+    message = att.belongs_to
+    if not message.is_postal:
+        return render_403(request)
+    if not att.can_delete:
+        return render_403(request)
+    if att.is_redacted:
+        FoiAttachment.objects.filter(redacted=att).update(
+            can_approve=True
+        )
+    att.remove_file_and_delete()
+
+    if request.is_ajax():
+        if request.content_type == 'application/json':
+            return JsonResponse({})
+        return HttpResponse()
+    messages.add_message(request, messages.SUCCESS,
+            _('Attachment deleted.'))
+    return redirect(message.get_absolute_url())
 
 
 @require_POST
@@ -199,6 +229,8 @@ def get_redact_context(foirequest, attachment):
             'toggleText': _('Text only'),
             'disableText': _('Hide text'),
             'cancel': _('Cancel'),
+            'undo': _('Undo'),
+            'redo': _('Redo'),
             'loadingPdf': _('Loading PDF...'),
             'redacting': _('Redaction process started, please wait...'),
             'sending': _('Saving redacted PDF, please wait...'),
@@ -245,7 +277,10 @@ def redact_attachment(request, slug, attachment_id):
             pdf_file = File(f)
             att.file = pdf_file
             att.size = pdf_file.size
-            att.approve_and_save()
+            if foirequest.not_publishable:
+                att.save()
+            else:
+                att.approve_and_save()
 
         if not attachment.is_redacted:
             attachment.redacted = att

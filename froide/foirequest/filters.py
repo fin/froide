@@ -7,6 +7,8 @@ import django_filters
 from elasticsearch_dsl.query import Q
 
 from froide.publicbody.models import PublicBody, Category, Jurisdiction
+from froide.campaign.models import Campaign
+from froide.helper.search.filters import BaseSearchFilterSet
 
 from .models import FoiRequest
 from .widgets import DropDownFilterWidget, DateRangeWidget
@@ -95,7 +97,9 @@ class DropDownStatusFilterWidget(DropDownFilterWidget):
         return option
 
 
-class BaseFoiRequestFilterSet(django_filters.FilterSet):
+class BaseFoiRequestFilterSet(BaseSearchFilterSet):
+    query_fields = ['title^5', 'description^3', 'content']
+
     q = django_filters.CharFilter(
         method='auto_query',
         widget=forms.TextInput(
@@ -142,6 +146,20 @@ class BaseFoiRequestFilterSet(django_filters.FilterSet):
         ),
         method='filter_category'
     )
+    campaign = django_filters.ModelChoiceFilter(
+        queryset=Campaign.objects.get_filter_list(),
+        to_field_name='slug',
+        null_value='-',
+        empty_label=_('all/no campaigns'),
+        null_label=_('no campaign'),
+        widget=forms.Select(
+            attrs={
+                'label': _('campaign'),
+                'class': 'form-control'
+            }
+        ),
+        method='filter_campaign'
+    )
     tag = django_filters.ModelChoiceFilter(
         queryset=Tag.objects.all(),
         to_field_name='slug',
@@ -184,28 +202,13 @@ class BaseFoiRequestFilterSet(django_filters.FilterSet):
     class Meta:
         model = FoiRequest
         fields = [
-            'q', 'status', 'jurisdiction',
+            'q', 'status', 'jurisdiction', 'campaign',
             'category', 'tag', 'publicbody', 'first'
         ]
 
     def __init__(self, *args, **kwargs):
-        self.view = kwargs.pop('view')
         super().__init__(*args, **kwargs)
         self.filters['status'].field.widget.get_url = self.view.make_filter_url
-
-    def filter_queryset(self, queryset):
-        """
-        Filter the queryset with the underlying form's `cleaned_data`. You must
-        call `is_valid()` or `errors` before calling this method.
-        This method should be overridden if additional filtering needs to be
-        applied to the queryset before it is cached.
-        """
-        for name, value in self.form.cleaned_data.items():
-            queryset = self.filters[name].filter(queryset, value)
-            # assert isinstance(queryset, models.QuerySet), \
-            #     "Expected '%s.%s' to return a QuerySet, but got a %s instead." \
-            #     % (type(self).__name__, name, type(queryset).__name__)
-        return queryset
 
     def auto_query(self, qs, name, value):
         if value:
@@ -213,7 +216,7 @@ class BaseFoiRequestFilterSet(django_filters.FilterSet):
                 "simple_query_string",
                 query=value,
                 # analyzer='standard',
-                fields=['title^5', 'description^3', 'content'],
+                fields=self.query_fields,
                 default_operator='and',
                 lenient=True
             ))
@@ -227,6 +230,15 @@ class BaseFoiRequestFilterSet(django_filters.FilterSet):
 
     def filter_jurisdiction(self, qs, name, value):
         return qs.filter(jurisdiction=value.id)
+
+    def filter_campaign(self, qs, name, value):
+        if value == '-':
+            return qs.filter(
+                Q('bool', must_not={
+                    'exists': {'field': 'campaign'}
+                })
+            )
+        return qs.filter(campaign=value.id)
 
     def filter_category(self, qs, name, value):
         return qs.filter(categories=value.id)

@@ -12,15 +12,14 @@ from django.contrib.contenttypes.models import ContentType
 
 from django_comments import get_model
 
-from froide.helper.text_utils import (
-    split_text_by_separator, redact_plaintext
-)
+from froide.helper.text_utils import split_text_by_separator
 from froide.helper.text_diff import mark_differences
 
 from ..models import FoiRequest, FoiMessage, DeliveryStatus
 from ..foi_mail import get_alternative_mail
 from ..auth import (
-    can_read_foirequest, can_write_foirequest, can_read_foirequest_anonymous
+    can_read_foirequest, can_write_foirequest, can_manage_foirequest,
+    can_read_foirequest_anonymous, can_read_foirequest_authenticated
 )
 
 Comment = get_model()
@@ -48,17 +47,12 @@ def highlight_request(message, request):
     real_content = unify(message.get_real_content())
     redacted_content = unify(message.get_content())
 
-    real_description = unify(message.request.description)
-    redacted_description = redact_plaintext(
-        unify(message.request.description), is_response=False, user=message.sender_user
-    )
+    description = unify(message.request.description)
 
     if auth_read:
         content = real_content
-        description = real_description
     else:
         content = redacted_content
-        description = redacted_description
 
     try:
         index = content.index(description)
@@ -80,12 +74,6 @@ def highlight_request(message, request):
             # format_html('<div>{pre}</div>', pre=content[:index])
         )
 
-    html_descr = markup_redacted_content(
-        real_description,
-        redacted_description,
-        authenticated_read=auth_read
-    )
-
     html_post = markup_redacted_content(
         real_content[offset:],
         redacted_content[offset:],
@@ -94,7 +82,7 @@ def highlight_request(message, request):
 
     html.append(format_html('''<div class="highlight">{description}</div><div class="collapse" id="letter_end">{post}</div>
 <div class="d-print-none"><a data-toggle="collapse" href="#letter_end" aria-expanded="false" aria-controls="letter_end" class="muted hideparent">{show_letter}</a>''',
-        description=html_descr,
+        description=description,
         post=html_post,
         show_letter=_("[... Show complete request text]"),
     ))
@@ -146,8 +134,9 @@ def markup_redacted_content(real_content, redacted_content,
 
     if content_2 and message_id:
         return mark_safe(''.join([
+            '<div class="text-content-visible">',
             content_1,
-            ('<a class="btn btn-sm btn-light btn-block" href="#message-footer-{message_id}" data-toggle="collapse" '
+            ('</div><a class="btn btn-sm btn-light btn-block" href="#message-footer-{message_id}" data-toggle="collapse" '
             ' aria-expanded="false" aria-controls="message-footer-{message_id}">{label}</a>'
             '<div id="message-footer-{message_id}" class="collapse">'
             .format(
@@ -181,14 +170,35 @@ def can_read_foirequest_filter(foirequest, request):
     return can_read_foirequest(foirequest, request)
 
 
+@register.filter(name='can_read_foirequest_authenticated')
+def can_read_foirequest_authenticated_filter(foirequest, request):
+    return can_read_foirequest_authenticated(foirequest, request)
+
+
 @register.filter(name='can_write_foirequest')
 def can_write_foirequest_filter(foirequest, request):
     return can_write_foirequest(foirequest, request)
 
 
+@register.filter(name='can_manage_foirequest')
+def can_manage_foirequest_filter(foirequest, request):
+    return can_manage_foirequest(foirequest, request)
+
+
 @register.filter(name='can_read_foirequest_anonymous')
 def can_read_foirequest_anonymous_filter(foirequest, request):
     return can_read_foirequest_anonymous(foirequest, request)
+
+
+@register.filter
+def truncatefilename(filename, chars=20):
+    too_many = len(filename) - chars
+    if too_many <= 0:
+        return filename
+    is_even = chars % 2
+    half_chars = chars // 2
+    back = -half_chars + (0 if is_even else 1)
+    return '%s…%s' % (filename[:half_chars], filename[back:])
 
 
 def alternative_address(foirequest):

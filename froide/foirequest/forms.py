@@ -85,9 +85,9 @@ class RequestForm(JSONMixin, forms.Form):
     )
 
     def __init__(self, *args, **kwargs):
-        request = kwargs.pop('request', None)
+        self.request = kwargs.pop('request', None)
         super(RequestForm, self).__init__(*args, **kwargs)
-        draft_qs = get_read_queryset(RequestDraft.objects.all(), request)
+        draft_qs = get_read_queryset(RequestDraft.objects.all(), self.request)
         self.fields['draft'].queryset = draft_qs
 
     def clean_reference(self):
@@ -100,6 +100,9 @@ class RequestForm(JSONMixin, forms.Form):
                        allowed_hosts=settings.ALLOWED_REDIRECT_HOSTS):
             return redirect_url
         return ''
+
+    def get_draft(self):
+        return self.cleaned_data.get('draft')
 
 
 def get_message_sender_form(*args, **kwargs):
@@ -516,6 +519,7 @@ class AttachmentSaverMixin(object):
             att.size = file.size
             att.filetype = file.content_type
             att.file.save(filename, file)
+            att.can_approve = not message.request.not_publishable
             att.approved = False
             att.save()
 
@@ -611,7 +615,9 @@ class SendMessageForm(AttachmentSaverMixin, forms.Form):
                 foirequest.possible_reply_addresses().items()])
         self.fields['to'].choices = choices
 
-        if foirequest.law and foirequest.law.email_only:
+        address_optional = foirequest.law and foirequest.law.email_only
+
+        if address_optional:
             self.fields['send_address'] = forms.BooleanField(
                 label=_("Send physical address"),
                 widget=BootstrapCheckboxInput,
@@ -624,12 +630,14 @@ class SendMessageForm(AttachmentSaverMixin, forms.Form):
 
         self.fields['address'] = forms.CharField(
             max_length=300,
-            required=False,
+            required=not address_optional,
             initial=foirequest.user.address,
             label=_('Mailing Address'),
             help_text=_(
-                'Optional. Your address will not be displayed '
-                'publicly.'),
+                'Optional. Your address will not be displayed publicly.'
+            ) if address_optional else _(
+                'Your address will not be displayed publicly.'
+            ),
             widget=forms.Textarea(attrs={
                 'rows': '3',
                 'class': 'form-control',
@@ -689,7 +697,10 @@ class SendMessageForm(AttachmentSaverMixin, forms.Form):
             message = list(filter(lambda x: x.id == self.cleaned_data["to"],
                     list(self.foirequest.messages)))[0]
             recipient_name = message.sender_name
-            recipient_email = message.sender_email
+            recipient_email = message.sender_email or (
+                message.sender_public_body and
+                message.sender_public_body.email
+            )
             recipient_pb = message.sender_public_body
 
         subject = re.sub(

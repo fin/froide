@@ -21,7 +21,12 @@
         <dd>
           {% if object|can_write_foirequest:request %}
             {% if message.is_response %}
-              <span title="{{ message.sender_email }}">{{ message.user_real_sender }} – {{ message.sender_public_body.name }}</span>
+              <span title="{{ message.sender_email }}">
+                <span class="redacted-dummy redacted-hover" data-toggle="tooltip" title="{% trans 'Only visible to you' %}">
+                  {{ message.user_real_sender }}
+                </span>
+                – {{ message.sender_public_body.name }}
+              </span>
               <span class="d-print-none">
                 (<a href="#change-pb-{{ message.id }}" data-toggle="collapse" href="#change-pb-{{ message.id }}" aria-expanded="false" aria-controls="change-pb-{{ message.id }}">
                   {% trans "change" %}
@@ -32,7 +37,7 @@
               {% endif %}
               <div id="change-pb-{{ message.id }}" class="collapse d-print-none">
                 {% with message_pb_form=message.get_public_body_sender_form %}
-                  <form method="post" action="{% url 'foirequest-set_message_sender' slug=object.slug message_id=message.id %}">
+                  <form class="disable-submit" method="post" action="{% url 'foirequest-set_message_sender' slug=object.slug message_id=message.id %}">
                     {% csrf_token %}
                     <label for="id_m{{ message.id }}-sender">{% blocktrans %}Set the Public Body that sent this message:{% endblocktrans %}</label>
                     {{ message_pb_form.sender }}
@@ -41,11 +46,18 @@
                 {% endwith %}
               </div>
             {% else %}
-              {{ message.user_real_sender }}
+              {% if object.user.private %}
+                <span class="redacted-dummy redacted-hover" data-toggle="tooltip" title="{% trans 'Only visible to you' %}">
+              {% else %}
+                <span>
+              {% endif %}
+                {{ message.user_real_sender }}
+              </span>
               {% if message.kind != 'email' %}
                 <em>{% blocktrans with kind=message.get_kind_display %}via {{ kind }}{% endblocktrans %}</em>
               {% endif %}
             {% endif %}
+            </span>
           {% else %}
             {% if message.is_response %}
               {% if froide.public_body_officials_public %}
@@ -152,17 +164,6 @@
         <a href="{% url 'foirequest-upload_attachments' slug=object.slug message_id=message.pk %}" class="btn btn-secondary">
           {% trans "Manage attachments" %}
         </a>
-        {% comment %} <h6>
-          {% blocktrans %}Upload Attachments{% endblocktrans %}
-        </h6>
-        {% with form=message.get_postal_attachment_form %}
-          <form method="post" action="{% url 'foirequest-add_postal_reply_attachment' slug=object.slug message_id=message.pk %}" enctype="multipart/form-data">
-            {% csrf_token %}
-            {% render_field form.files %}
-            <button type="submit" class="upload-button btn btn-secondary">{% blocktrans %}Upload Document{% endblocktrans %}</button>
-            <span class="form-text text-muted">{{ form.files.help_text }}</span>
-          </form>
-        {% endwith %} {% endcomment %}
       </div>
     {% endif %}
 
@@ -231,7 +232,7 @@
             {% if object|can_write_foirequest:request %}
               <div class="d-print-none alert alert-warning">
                 <p>{% blocktrans %}This message may contain information that you may wish to not publish until after the whole request finished. The following message is therefore currently only visible to you.{% endblocktrans %}</p>
-                <form class="form-horizontal" method="post" action="{% url 'foirequest-approve_message' slug=object.slug message=message.pk %}">
+                <form class="form-horizontal disable-submit" method="post" action="{% url 'foirequest-approve_message' slug=object.slug message=message.pk %}">
                   {% csrf_token %}
                   <button class="btn btn-secondary" type="submit">
                     {% trans "Publish message content" %}
@@ -251,11 +252,9 @@
       </div>
     </div>
   </div>
-  {% if message|should_show_guidance:request %}
-    <div id="{{ message.get_html_id }}-guidance" class="message-guidance">
-      {% render_guidance message %}
-    </div>
-  {% endif %}
+  <div id="{{ message.get_html_id }}-guidance" class="message-guidance d-print-none">
+    {% render_guidance message %}
+  </div>
   </div>{# close row #}
 
   {% block after_message %}{% endblock %}

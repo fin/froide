@@ -275,7 +275,7 @@ class FoiMessage(models.Model):
     @property
     def user_real_sender(self):
         if self.sender_user:
-            return self.sender_user.display_name()
+            return self.sender_user.get_full_name()
         if settings.FROIDE_CONFIG.get(
                 "public_body_officials_email_public", False):
             return make_address(self.sender_email, self.sender_name)
@@ -337,6 +337,7 @@ class FoiMessage(models.Model):
         return self.subject_redacted
 
     def get_content(self):
+        self.plaintext = self.plaintext or ''
         if self.plaintext_redacted is None:
             self.plaintext_redacted = redact_plaintext(
                 self.plaintext,

@@ -15,6 +15,7 @@ from taggit.managers import TaggableManager
 from taggit.models import TagBase, TaggedItemBase
 from taggit.utils import edit_string_for_tags
 from treebeard.mp_tree import MP_Node, MP_NodeManager
+from django_wikidata.fields import WikidataItemField
 
 from froide.georegion.models import GeoRegion
 
@@ -160,6 +161,10 @@ class FoiLaw(models.Model):
     @property
     def description_html(self):
         return markdown(self.description)
+
+    @property
+    def address_required(self):
+        return not self.email_only
 
     def get_refusal_reason_choices(self):
         not_applicable = [('n/a', _("No law can be applied"))]
@@ -342,6 +347,8 @@ class PublicBody(models.Model):
             default=0)
     site = models.ForeignKey(Site, verbose_name=_("Site"),
             null=True, on_delete=models.SET_NULL, default=settings.SITE_ID)
+
+    wikidata_item = WikidataItemField(blank=True)
 
     jurisdiction = models.ForeignKey(Jurisdiction, verbose_name=_('Jurisdiction'),
             blank=True, null=True, on_delete=models.SET_NULL)

@@ -18,6 +18,8 @@ from froide.publicbody.forms import PublicBodyForm, MultiplePublicBodyForm
 from froide.publicbody.widgets import get_widget_context
 from froide.publicbody.models import PublicBody
 from froide.publicbody.api_views import PublicBodyListSerializer
+from froide.georegion.models import GeoRegion
+from froide.campaign.models import Campaign
 from froide.helper.auth import get_read_queryset
 from froide.helper.utils import update_query_params
 
@@ -27,7 +29,31 @@ from ..utils import check_throttle
 from ..services import CreateRequestService, SaveDraftService
 
 
-csrf_middleware_class = import_string(settings.FROIDE_CSRF_MIDDLEWARE)
+csrf_middleware_class = import_string(
+    getattr(
+        settings,
+        'FROIDE_CSRF_MIDDLEWARE',
+        'django.middleware.csrf.CsrfViewMiddleware'
+    )
+)
+
+
+class FakePublicBodyForm(object):
+    def __init__(self, publicbodies):
+        self.publicbodies = publicbodies
+        self.valid = False
+
+    def is_valid(self):
+        self.valid = True
+        return True
+
+    @property
+    def is_multi(self):
+        return len(self.publicbodies) > 1
+
+    def get_publicbodies(self):
+        assert self.valid
+        return self.publicbodies
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -36,6 +62,8 @@ class MakeRequestView(FormView):
     template_name = 'foirequest/request.html'
     FORM_CONFIG_PARAMS = ('hide_similar', 'hide_public', 'hide_draft',
                           'hide_publicbody', 'hide_full_text', 'hide_editing')
+
+    draft = None
 
     def get_initial(self):
         request = self.request
@@ -68,13 +96,15 @@ class MakeRequestView(FormView):
     def get_js_context(self):
         ctx = {
             'settings': {
-                'user_can_hide_web': settings.FROIDE_CONFIG.get('user_can_hide_web')
+                'user_can_hide_web': settings.FROIDE_CONFIG.get('user_can_hide_web'),
+                'user_can_create_batch': self.can_create_batch()
             },
             'url': {
                 'searchRequests': reverse('api:request-search'),
                 'listJurisdictions': reverse('api:jurisdiction-list'),
                 'listCategories': reverse('api:category-list'),
                 'listClassifications': reverse('api:classification-list'),
+                'listGeoregions': reverse('api:georegion-list'),
                 'listPublicBodies': reverse('api:publicbody-list'),
                 'listLaws': reverse('api:law-list'),
                 'search': reverse('foirequest-search'),
@@ -126,7 +156,11 @@ class MakeRequestView(FormView):
                     _('classification'),
                     _('classifications'),
                 ],
-
+                'containingGeoregionsPlural': [
+                    _('part of administrative region'),
+                    _('part of administrative regions'),
+                ],
+                'administrativeUnitKind': _('type of administrative unit'),
                 'toPublicBody': _('To: {name}').format(name='${name}'),
                 'change': _('change'),
                 'searchPlaceholder': _('Search...'),
@@ -136,6 +170,11 @@ class MakeRequestView(FormView):
                 'loadMore': _('load more...'),
                 'next': _('next'),
                 'previous': _('previous'),
+                'batchRequestDraftOnly': _(
+                    'You have been allowed to make one project request to '
+                    'these public bodies, but you do not have permission '
+                    'to select your own.'
+                ),
                 'subject': _('Subject'),
                 'defaultLetterStart': _('Please send me the following information:'),
                 'warnFullText': _('Watch out! You are requesting information across jurisdictions! If you write the full text, we cannot customize it according to applicable laws. Instead you have to write the text to be jurisdiction agnostic.'),
@@ -175,6 +214,11 @@ class MakeRequestView(FormView):
             'regex': {
                 'greetings': [_('Dear Sir or Madam')],
                 'closings': [_('Kind Regards')]
+            },
+            'fixtures': {
+                'georegion_kind': [
+                    [str(k), str(v)] for k, v in GeoRegion.KIND_CHOICES
+                ]
             }
         }
         pb_ctx = get_widget_context()
@@ -236,12 +280,21 @@ class MakeRequestView(FormView):
     def get_publicbodies(self):
         if self.request.method == 'POST':
             # on POST public bodies need to come from POST vars
+            if self.has_prepared_publicbodies():
+                # prepared draft with fixed public bodies
+                return self.draft.publicbodies.all()
             self._publicbodies = []
         if hasattr(self, '_publicbodies'):
             return self._publicbodies
         pbs = self.get_publicbodies_from_context()
         self._publicbodies = pbs
         return pbs
+
+    def has_prepared_publicbodies(self):
+        return (
+            not self.can_create_batch() and
+            self.draft and self.draft.is_multi_request
+        )
 
     def get_publicbodies_from_context(self):
         publicbody_ids = self.kwargs.get('publicbody_ids')
@@ -277,10 +330,12 @@ class MakeRequestView(FormView):
         if not publicbodies:
             form_class = self.get_publicbody_form_class()
             return form_class(**self.get_publicbody_form_kwargs())
-        return None
+        return FakePublicBodyForm(publicbodies)
 
     def csrf_valid(self):
-        return not bool(csrf_middleware_class().process_view(self.request, None, (), {}))
+        return not bool(
+            csrf_middleware_class().process_view(self.request, None, (), {})
+        )
 
     def post(self, request, *args, **kwargs):
         error = False
@@ -300,11 +355,15 @@ class MakeRequestView(FormView):
         if not request_form.is_valid():
             error = True
 
+        self.draft = request_form.get_draft()
         publicbody_form = self.get_publicbody_form()
 
-        if publicbody_form:
-            if not publicbody_form.is_valid():
-                error = True
+        if not publicbody_form.is_valid():
+            error = True
+
+        if self.has_prepared_publicbodies() and self.draft.project:
+            request_form.add_error(None, _('Draft cannot be used again.'))
+            error = True
 
         if request.user.is_authenticated and request.POST.get('save_draft', ''):
             return self.save_draft(request_form, publicbody_form)
@@ -324,10 +383,7 @@ class MakeRequestView(FormView):
         return self.form_invalid(**form_kwargs)
 
     def save_draft(self, request_form, publicbody_form):
-        if publicbody_form:
-            publicbodies = publicbody_form.get_publicbodies()
-        else:
-            publicbodies = self.get_publicbodies()
+        publicbodies = publicbody_form.get_publicbodies()
 
         service = SaveDraftService({
             'publicbodies': publicbodies,
@@ -357,11 +413,7 @@ class MakeRequestView(FormView):
         user = self.request.user
         data = dict(request_form.cleaned_data)
         data['user'] = user
-
-        if publicbody_form:
-            data['publicbodies'] = publicbody_form.get_publicbodies()
-        else:
-            data['publicbodies'] = self.get_publicbodies()
+        data['publicbodies'] = publicbody_form.get_publicbodies()
 
         if not user.is_authenticated:
             data.update(user_form.cleaned_data)
@@ -443,11 +495,17 @@ class MakeRequestView(FormView):
         if self.request.GET.get('single') is not None:
             is_multi = False
 
+        if self.request.method == 'POST' or publicbodies or is_multi:
+            campaigns = None
+        else:
+            campaigns = Campaign.objects.get_active()
+
         kwargs.update({
             'publicbodies': publicbodies,
             'publicbodies_json': publicbodies_json,
             'multi_request': is_multi,
             'config': config,
+            'campaigns': campaigns,
             'js_config': json.dumps(self.get_js_context()),
             'public_body_search': self.request.GET.get('topic', '')
         })

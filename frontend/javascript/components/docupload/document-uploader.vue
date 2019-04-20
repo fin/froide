@@ -1,6 +1,6 @@
 <template>
   <div class="document-uploader mb-3 mt-3">
-    <div class="upload">
+    <div v-if="canUpload" class="upload">
       <label :class="{'btn btn-primary isMobile': isMobile}">
         <i class="fa fa-cloud-upload"></i>
         <span v-if="isMobile">
@@ -37,13 +37,18 @@
           {{ i18n.showIrrelevantAttachments}}
         </button>
       </p>
-      <ul v-if="showOther">
-        <li v-for="other in otherAttachments" :key="other.name">
-          <a :href="other.url" target="_blank">
-            {{ other.name }}
-          </a>
-        </li>
-      </ul>
+      <div v-if="showOther">
+        <component
+          v-for="doc in otherAttachments"
+          v-bind:is="doc.component"
+          :key="doc.id"
+          :document="doc"
+          :config="config"
+          @docupdated="documentUpdated(doc, $event)"
+          @makerelevant="makeRelevant(doc)"
+          @notnew="doc.new = false"
+        ></component>
+      </div>
     </div>
   </div>
 </template>
@@ -54,9 +59,9 @@ import Vue from 'vue'
 
 import I18nMixin from '../../lib/i18n-mixin'
 
-import PdfDocument from './pdf-document.vue'
 import FullpdfDocument from './fullpdf-document.vue'
 import ImageDocument from './image-document.vue'
+import FileDocument from './file-document.vue'
 
 // If smaller, likely not document image
 const MIN_DOC_IMAGE_SIZE = 50 * 1024
@@ -67,9 +72,9 @@ export default {
   mixins: [I18nMixin],
   props: ['config', 'message'],
   components: {
-    PdfDocument,
     ImageDocument,
-    FullpdfDocument
+    FullpdfDocument,
+    FileDocument
   },
   data () {
     return {
@@ -96,6 +101,9 @@ export default {
       // device detection
       return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
     },
+    canUpload () {
+      return this.message.kind === 'post'
+    }
   },
   methods: {
     testExifSupport () {
@@ -118,36 +126,45 @@ export default {
       let images = []
       const other = []
       this.message.attachments.forEach((att) => {
-        if (this.isDocumentAttachment(att)) {
-          if (this.config.settings.pdf_filetypes.includes(att.filetype)) {
-            documents.push({
-              id: att.id,
-              name: att.name,
-              url: att.file_url,
-              filetype: 'application/pdf',
-              site_url: att.site_url,
-              type: 'pdf',
-              pending: att.pending,
-              pages: null,
-              component: 'pdf-document',
-              attachment: att
-            })
-          } else {
-            images.push({
-              id: att.id,
-              name: att.name,
-              url: att.file_url,
-              attachment: att
-            })
-          }
-        } else {
+        if (att.is_irrelevant) {
           other.push({
             id: att.id,
             name: att.name,
             filetype: att.filetype,
             pending: att.pending,
-            url: att.site_url,
+            url: att.file_url,
+            attachment: att,
+            component: 'file-document'
+          })
+        } else if (att.is_pdf) {
+          documents.push({
+            id: att.id,
+            name: att.name,
+            url: att.file_url,
+            filetype: 'application/pdf',
+            site_url: att.site_url,
+            type: 'pdf',
+            pending: att.pending,
+            pages: null,
+            component: 'file-document',
             attachment: att
+          })
+        } else if (att.is_image) {
+          images.push({
+            id: att.id,
+            name: att.name,
+            url: att.file_url,
+            attachment: att
+          })
+        } else {
+          documents.push({
+            id: att.id,
+            name: att.name,
+            filetype: att.filetype,
+            pending: att.pending,
+            url: att.site_url,
+            attachment: att,
+            component: 'file-document'
           })
         }
         this.names[att.name] = true
@@ -162,18 +179,6 @@ export default {
         )
       }
       return [documents, other]
-    },
-    isDocumentAttachment (att) {
-      if (att.converted !== null) {
-        return false
-      }
-      if (this.config.settings.document_filetypes.includes(att.filetype)) {
-        return true
-      }
-      if (this.config.settings.image_filetypes.includes(att.filetype) && att.size <= MIN_DOC_IMAGE_SIZE) {
-        return true
-      }
-      return false
     },
     prepareImages (images) {
       images = images.sort((a, b) => {
@@ -242,7 +247,7 @@ export default {
           new: true,
           pages: null,
           pending: true,
-          component: 'pdf-document',
+          component: 'file-document',
           attachment: document
         },
         ...this.documents.filter((d) => d.type === 'pdf')
@@ -254,8 +259,28 @@ export default {
         return
       }
       for (let key in update) {
-        doc[key] = update[key]
+        Vue.set(doc, key, update[key])
       }
+    },
+    makeRelevant (doc) {
+      let imageDoc = this.documents.filter((d) => d.type === 'imagedoc')
+      if (imageDoc.length > 0) {
+        doc.pageNum = imageDoc[0].pages.length + 1
+        Vue.set(imageDoc[0], 'pages', [
+          ...imageDoc[0].pages,
+          doc
+        ])
+      } else {
+        doc.pageNum = 1
+        this.documents = [
+          ...this.documents,
+          this.getNewImageDoc({
+            pages: [doc],
+            new: true
+          })
+        ]
+      }
+      this.otherAttachments = this.otherAttachments.filter((o) => o !== doc)
     },
     uploadPage (page) {
       return new Promise((resolve, reject) => {
@@ -333,7 +358,7 @@ export default {
             progress: 0,
             new: true,
             name: f.name,
-            component: 'pdf-document',
+            component: 'file-document',
             url: window.URL.createObjectURL(f)
           })
         } else if (this.config.settings.image_filetypes.includes(f.type)) {
