@@ -66,7 +66,6 @@ def redact_plaintext(content, is_response=True, user=None):
             content = remove_closing(
                 content
             )
-
         else:
             if settings.FROIDE_CONFIG.get('greetings'):
                 content = replace_custom(

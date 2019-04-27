@@ -23,7 +23,9 @@ def send_mail(subject, body, user_email,
               html=None,
               attachments=None, fail_silently=False,
               bounce_check=True, headers=None,
-              auto_bounce=True, **kwargs):
+              priority=True,
+              queue=None, auto_bounce=True,
+              **kwargs):
     if not user_email:
         return
     if bounce_check:
@@ -35,6 +37,11 @@ def send_mail(subject, body, user_email,
     backend_kwargs = {}
     if HANDLE_BOUNCES and auto_bounce and make_bounce_address:
         backend_kwargs['return_path'] = make_bounce_address(user_email)
+
+    if not priority and queue is None:
+        queue = settings.EMAIL_BULK_QUEUE
+    if queue is not None:
+        backend_kwargs['queue'] = queue
 
     connection = get_mail_connection(**backend_kwargs)
 
