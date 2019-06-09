@@ -10,7 +10,7 @@
         <div class="alert alert-error" role="alert">{{ errors }}</div>
       </div>
     </div>
-    <div class="row" v-if="working">
+    <div class="row mt-5" v-if="working">
       <div class="col-lg-12">
         <div class="text-center">
           <h3 v-if="loading">
@@ -24,7 +24,11 @@
           </h3>
         </div>
         <div class="progress">
-          <div class="progress-bar" :class="{'progress-bar-striped': progressUnknown}" role="progressbar" :aria-valuenow="progressPercent" aria-valuemin="0" aria-valuemax="100" :style="progressWidth"></div>
+          <div class="progress-bar" :class="{'progress-bar-striped progress-bar-animated': progressUnknown}" role="progressbar" :aria-valuenow="progressPercent" aria-valuemin="0" aria-valuemax="100" :style="progressWidth"></div>
+        </div>
+        <div class="text-center mt-3">
+          <div class="spinner-border" role="status">
+          </div>
         </div>
       </div>
     </div>
@@ -138,7 +142,7 @@ import Vue from 'vue'
 
 import PDFJS from 'pdfjs-dist'
 
-import {bustCache} from '../../lib/api.js'
+import {bustCache, getData} from '../../lib/api.js'
 
 const PDF_TO_CSS_UNITS = 96.0 / 72.0
 
@@ -163,10 +167,11 @@ export default {
       ready: false,
       textOnly: false,
       textDisabled: true,
-      scaleFactor: PDF_TO_CSS_UNITS,
+      pageScaleFactor: {},
       actionsPerPage: {},
       actionIndexPerPage: {},
       rectanglesPerPage: {},
+      maxWidth: null,
       startDrag: null,
       endDrag: null,
       initialAutoRedact: {},
@@ -287,14 +292,25 @@ export default {
       return this.doc.getPage(pageNum).then((page) => {
         console.log('# Page ' + pageNum)
         this.page = page
-        var viewport = page.getViewport(this.scaleFactor)
-        var maxWidth = this.$refs.containerWrapper.offsetWidth
-        if (viewport.width > maxWidth) {
-          this.scaleFactor = maxWidth / viewport.width
-          viewport = page.getViewport(this.scaleFactor)
+        if (this.maxWidth === null) {
+          this.maxWidth = this.$refs.containerWrapper.offsetWidth
         }
+
+        if (this.pageScaleFactor[pageNum] === undefined) {
+          // Make sure scaleFactor is fixed to page, doesn't change
+          let scaleFactor = PDF_TO_CSS_UNITS
+          let viewport = page.getViewport(PDF_TO_CSS_UNITS)
+          if (viewport.width > this.maxWidth) {
+            scaleFactor = this.maxWidth / viewport.width
+          }
+          this.pageScaleFactor[pageNum] = scaleFactor
+        }
+
+        let scaleFactor = this.pageScaleFactor[pageNum]
+        let viewport = page.getViewport(scaleFactor)
+
         this.viewport = viewport
-        console.log(this.scaleFactor, 'Size: ' + viewport.width + 'x' + viewport.height, 'at maxwidth', maxWidth)
+        console.log(scaleFactor, 'Size: ' + viewport.width + 'x' + viewport.height, 'at maxwidth', this.maxWidth)
         var canvas = this.canvas
         canvas.width = viewport.width
         canvas.height = viewport.height
@@ -352,9 +368,9 @@ export default {
       this.textOnly = !this.textDisabled
     },
     redact () {
-      this.$refs.top.scrollIntoView(true)
+      this.$refs.top.scrollIntoView({behavior: "smooth", block: "start"})
       this.ready = false
-      this.workingState = 'redacting'
+      this.workingState = 'sending'
       this.progressCurrent = 0
       this.progressTotal = this.numPages + 1
       let pages = range(1, this.numPages + 1)
@@ -370,23 +386,22 @@ export default {
         .then(() => {
           console.log(serialized)
           this.progressCurrent = null
-          return this.sendSerializedPages(serialized).then((res) => {
-            if (res.url) {
+          return this.sendSerializedPages(serialized).then((attachment) => {
+            if (attachment) {
               this.progressCurrent = 100
               this.progressTotal = 100
-              bustCache(res.attachment_url).then(() => {
-                document.location.href = res.url
+              bustCache(attachment.file_url).then(() => {
+                document.location.href = attachment.anchor_url
               })
             } else {
               this.workingState = null
-              this.errors = res
+              this.errors = res || i18n.redactionTimeout
               this.$refs.top.scrollIntoView(true)
             }
           }).catch((err) => {
             this.workingState = null
             console.error(err)
-            this.ready = true
-            this.redacting = false
+            this.ready = false
             this.errors = err
             this.$refs.top.scrollIntoView(true)
           })
@@ -410,12 +425,55 @@ export default {
             this.progressCurrent = null
           }
         })
-        xhr.onreadystatechange = function () {
+        xhr.onreadystatechange = () => {
           if (xhr.readyState === 4) {
-            return resolve(JSON.parse(xhr.responseText))
+            if (xhr.status === 200) {
+              try {
+                this.progressCurrent = null
+                this.workingState = 'redacting'
+                this.waitOnAttachment(
+                  JSON.parse(xhr.responseText)
+                ).then(resolve).catch(reject)
+                return
+              } catch (e) {
+                console.error('Failed to decode JSON', e, xhr.responseText)
+                reject(this.i18n.redactionError)
+                return
+              }
+            } else {
+              console.error('Non 200 response code', xhr.status)
+              reject(this.i18n.redactionError)
+            }
           }
         }
         xhr.send(JSON.stringify(serialized))
+      })
+    },
+    waitOnAttachment (response) {
+      return new Promise((resolve, reject) => {
+        let attachmentUrl = response.resource_uri
+        let waitTime = 0
+        const checkAttachment = () => {
+          getData(attachmentUrl).then((attachment) => {
+            if (attachment.pending || !attachment.approved) {
+              waitTime += 5
+              if (waitTime > 60 * 3) {
+                console.error('Timeout while waiting for redaction')
+                return reject(this.i18n.redactionTimeout)
+              }
+              if (this.errors === null) {
+                window.setTimeout(checkAttachment, 5 * 1000)
+              }
+              return
+            }
+            console.error('Attachment redacted.')
+            resolve(attachment)
+          }).catch(() => {
+            console.err('Could not get attachment via API')
+            return reject(this.i18n.redactionError)
+          })
+        }
+        window.setTimeout(checkAttachment, 1000)
       })
     },
     serializePage (pageNumber) {
@@ -521,6 +579,9 @@ export default {
         return
       }
       let [x, y, w, h] = this.getRect(this.startDrag, endDrag)
+      if (isNaN(parseFloat(x)) || isNaN(parseFloat(y))) {
+        return
+      }
 
       // find overlapping text and remove it completely
       let divs = this.textLayer.children
@@ -613,7 +674,9 @@ export default {
             node = node.parentNode
           }
           let action = this.redactRange(node, range.startOffset, range.endOffset)
-          actions.push(action)
+          if (action !== null) {
+            actions.push(action)
+          }
           continue
         }
         // FIXME: weird other logic
@@ -639,7 +702,9 @@ export default {
             return
           }
           let action = this.redactRange(node, start, end)
-          actions.push(action)
+          if (action !== null) {
+            actions.push(action)
+          }
         })
       }
       let action = this.combineActions(actions)
@@ -738,7 +803,9 @@ export default {
       if (action.texts !== undefined && action.texts.length > 0) {
         action.texts.forEach(a => {
           let div = this.textLayer.querySelector(`[data-index="${a.textIndex}"]`)
-          div.textContent = a.textAfter
+          if (div !== null) { 
+            div.textContent = a.textAfter
+          }
         })
       }
     },
@@ -757,7 +824,9 @@ export default {
       if (action.texts !== undefined && action.texts.length > 0) {
         action.texts.forEach(a => {
           let div = this.textLayer.querySelector(`[data-index="${a.textIndex}"]`)
-          div.textContent = a.textBefore
+          if (div !== null) {
+            div.textContent = a.textBefore
+          }
         })
       }
     },
@@ -773,7 +842,9 @@ export default {
           let pos = result.index
           let match = result[0]
           let action = this.redactText(div, pos, match)
-          this.addAction(action)
+          if (action !== null) {
+            this.addAction(action)
+          }
         }
       })
       if (matches.length > 0) {
@@ -838,6 +909,9 @@ export default {
       div.textContent = text
 
       let [x, y] = this.getDivPos(div)
+      if (isNaN(parseFloat(x)) || isNaN(parseFloat(y))) {
+        return null
+      }
       x += startWidth
       let width = endWidth - startWidth
 
@@ -872,7 +946,7 @@ export default {
   .redactContainer {
     position: relative;
     padding: 0;
-    margin: 0;
+    margin: 0 auto;
   }
   .hide-redacting {
     visibility: hidden;
@@ -885,6 +959,7 @@ export default {
     right: 0;
     bottom: 0;
     overflow: hidden;
+    cursor: crosshair;
   }
   .textLayer {
     opacity: 0.2;

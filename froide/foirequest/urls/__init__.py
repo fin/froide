@@ -1,9 +1,9 @@
 from django.conf.urls import url, include
 from django.conf import settings
-from django.utils.translation import pgettext
+from django.utils.translation import pgettext_lazy
 
 from ..views import (
-    search, auth, shortlink, auth_message_attachment,
+    search, auth, shortlink, AttachmentFileDetailView,
     project_shortlink
 )
 
@@ -18,29 +18,40 @@ from . import (
 
 urlpatterns = [
     # Translators: request URL
-    url(r'^%s/' % pgettext('url part', 'make-request'), include(make_request_urls)),
+    url(pgettext_lazy('url part', r'^make-request/'), include(make_request_urls)),
     # Translators: URL part
-    url(r'^%s/' % pgettext('url part', 'requests'), include(list_requests_urls)),
+    url(pgettext_lazy('url part', r'^requests/'), include(list_requests_urls)),
     # Translators: request URL
-    url(r'^%s/' % pgettext('url part', 'request'), include(request_urls)),
+    url(pgettext_lazy('url part', r'^request/'), include(request_urls)),
     # Translators: project URL
-    url(r'^%s/' % pgettext('url part', 'project'), include(project_urls)),
+    url(pgettext_lazy('url part', r'^project/'), include(project_urls)),
 
     # Translators: project URL
-    url(r'^%s/' % pgettext('url part', 'account'), include(account_urls)),
+    url(pgettext_lazy('url part', r'^account/'), include(account_urls)),
 
     # Translators: request URL
-    url(r'^%s/' % pgettext('url part', 'search'), search, name="foirequest-search"),
+    url(pgettext_lazy('url part', r'^search/'), search, name="foirequest-search"),
     # Translators: Short request URL
-    url(r"^%s/(?P<obj_id>\d+)/?$" % pgettext('url part', 'r'), shortlink, name="foirequest-shortlink"),
+    url(pgettext_lazy('url part', r"^r/(?P<obj_id>\d+)/?$"), shortlink,
+        name="foirequest-shortlink"),
     # Translators: Short project URL
-    url(r"^%s/(?P<obj_id>\d+)/?$" % pgettext('url part', 'p'), project_shortlink, name="foirequest-project_shortlink"),
+    url(pgettext_lazy('url part', r"^p/(?P<obj_id>\d+)/?$"),
+        project_shortlink, name="foirequest-project_shortlink"),
     # Translators: Short-request auth URL
-    url(r"^%s/(?P<obj_id>\d+)/auth/(?P<code>[0-9a-f]+)/$" % pgettext('url part', 'r'), auth, name="foirequest-auth"),
+    url(pgettext_lazy('url part', r"^r/(?P<obj_id>\d+)/auth/(?P<code>[0-9a-f]+)/$"),
+        auth, name="foirequest-auth"),
 ]
+
+MEDIA_PATH = settings.MEDIA_URL
+# Split off domain and leading slash
+if MEDIA_PATH.startswith('http'):
+    MEDIA_PATH = MEDIA_PATH.split('/', 3)[-1]
+else:
+    MEDIA_PATH = MEDIA_PATH[1:]
+
 
 urlpatterns += [
     url(r'^%s%s/(?P<message_id>\d+)/(?P<attachment_name>.+)' % (
-        settings.FOI_MEDIA_URL[1:], settings.FOI_MEDIA_PATH
-    ), auth_message_attachment, name='foirequest-auth_message_attachment')
+        MEDIA_PATH, settings.FOI_MEDIA_PATH
+    ), AttachmentFileDetailView.as_view(), name='foirequest-auth_message_attachment')
 ]

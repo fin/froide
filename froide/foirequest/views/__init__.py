@@ -5,7 +5,7 @@ from .account_requests import (
 )
 from .attachment import (
     show_attachment, delete_attachment,
-    approve_attachment, auth_message_attachment, redact_attachment
+    approve_attachment, AttachmentFileDetailView, redact_attachment
 )
 from .draft import delete_draft, claim_draft
 from .list_requests import (
@@ -28,7 +28,8 @@ from .project import (
 from .request_actions import (
     set_public_body, suggest_public_body, set_status, make_public, set_law,
     set_tags, set_summary, mark_not_foi, mark_checked, make_same_request,
-    extend_deadline, SetTeamView
+    extend_deadline, SetTeamView,
+    confirm_request, delete_request
 )
 from .request import (
     shortlink, auth, show
@@ -39,7 +40,7 @@ __all__ = [
     MyRequestsView, DraftRequestsView, FollowingRequestsView,
     FoiProjectListView, RequestSubscriptionsView, user_calendar,
     show_attachment, delete_attachment,
-    approve_attachment, auth_message_attachment, redact_attachment,
+    approve_attachment, AttachmentFileDetailView, redact_attachment,
     delete_draft, claim_draft,
     ListRequestView, search, list_unchecked, UserRequestFeedView,
     MakeRequestView, DraftRequestView, RequestSentView,
@@ -52,6 +53,7 @@ __all__ = [
     FoiRequestSitemap,
     ProjectView, project_shortlink, SetProjectTeamView,
     set_public_body, suggest_public_body, set_status, make_public, set_law,
+    confirm_request, delete_request,
     set_tags, set_summary, mark_not_foi, mark_checked, make_same_request,
     extend_deadline,
     shortlink, auth, show

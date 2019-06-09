@@ -5,6 +5,12 @@ from django.utils.translation import ugettext_lazy as _
 from django.utils.html import strip_tags
 from django.conf import settings
 
+try:
+    from lxml import html as html_parser
+except ImportError:
+    html_parser = None
+
+
 SEPARATORS = re.compile(r'(\s*-{5}\w+ \w+-{5}\s*|^--\s*$)', re.UNICODE | re.M)
 
 
@@ -152,13 +158,30 @@ def make_italic(x):
     return '*%s*' % x.text_content()
 
 
+def make_link(x):
+    return '[%s](%s)%s' % (
+        x.text_content(),
+        x.attrib.get('href', ''),
+        x.tail if x.tail else ''
+    )
+
+
+def make_paragraph(el):
+    el.append(html_parser.Element("br"))
+    convert_element(el)
+
+
 HTML_CONVERTERS = {
-    'a': lambda x: '[%s](%s)' % (x.text_content(), x.attrib.get('href', '')),
+    'a': make_link,
     'strong': make_strong,
     'b': make_strong,
     'i': make_italic,
-    'em': make_italic
+    'em': make_italic,
+    'p': make_paragraph,
+    'br': lambda x: '\n%s' % (x.tail if x.tail else ''),
 }
+
+HTML_GARBAGE = ('style',)
 
 
 def convert_html_to_text(html_str):
@@ -166,28 +189,24 @@ def convert_html_to_text(html_str):
     If lxml is available, convert to Markdown (but badly)
     otherwise just strip_tags
     """
-
-    try:
-        from lxml import html
-    except ImportError:
+    if html_parser is None:
         return strip_tags(html_str)
 
-    root = html.fromstring(html_str)
+    root = html_parser.fromstring(html_str)
     try:
         body = root.xpath('./body')[0]
     except IndexError:
         # No body element
         body = root
 
-    for tag, func in HTML_CONVERTERS.items():
+    for tag in HTML_GARBAGE:
         els = body.xpath('.//' + tag)
         for el in els:
-            replacement = func(el)
-            repl_tag = html.Element("span")
-            repl_tag.text = replacement
-            el.getparent().replace(el, repl_tag)
+            el.getparent().remove(el)
 
-    text = html.tostring(
+    convert_element(body)
+
+    text = html_parser.tostring(
         body,
         pretty_print=True,
         method='text',
@@ -195,3 +214,14 @@ def convert_html_to_text(html_str):
     ).decode('utf-8')
 
     return '\n'.join(x.strip() for x in text.splitlines()).strip()
+
+
+def convert_element(root_element):
+    for tag, func in HTML_CONVERTERS.items():
+        els = root_element.xpath('.//' + tag)
+        for el in els:
+            replacement = func(el)
+            if replacement is not None:
+                repl_tag = html_parser.Element("span")
+                repl_tag.text = replacement
+                el.getparent().replace(el, repl_tag)

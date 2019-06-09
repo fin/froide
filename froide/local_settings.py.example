@@ -27,12 +27,12 @@ class Dev(Base):
 
     # DATABASES = {
     #     'default': {
-    #         'ENGINE': 'django.contrib.gis.db.backends.postgis',  # Add 'postgresql_psycopg2', 'postgresql', 'mysql', 'sqlite3' or 'oracle'.
-    #         'NAME': 'dev.db',                      # Or path to database file if using sqlite3.
-    #         'USER': '',                      # Not used with sqlite3.
-    #         'PASSWORD': '',                  # Not used with sqlite3.
-    #         'HOST': '',                      # Set to empty string for localhost. Not used with sqlite3.
-    #         'PORT': '',                      # Set to empty string for default. Not used with sqlite3.
+    #         'ENGINE': 'django.contrib.gis.db.backends.postgis',
+    #         'NAME': '',
+    #         'USER': '',
+    #         'PASSWORD': '',
+    #         'HOST': '',
+    #         'PORT': '',
     #     }
     # }
 
@@ -100,8 +100,7 @@ class Dev(Base):
     # STATIC_URL = "/static/"
 
     # # Use nginx to serve uploads authenticated
-    # USE_X_ACCEL_REDIRECT = True
-    # X_ACCEL_REDIRECT_PREFIX = '/protected'
+    # INTERNAL_MEDIA_PREFIX = '/protected/'
 
     ### URLs that can be translated to a secret value
 
@@ -253,8 +252,6 @@ class Dev(Base):
     #     closings=[rec(r"Sincerely yours,?")],
     #     public_body_boosts={},
     #     autocomplete_body_boosts={},
-    #     dryrun=False,
-    #     dryrun_domain="testmail.example.com",
     #     doc_conversion_binary=None,
     #     doc_conversion_call_func=None
     # ))

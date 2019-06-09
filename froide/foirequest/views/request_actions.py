@@ -8,7 +8,7 @@ from django.contrib import messages
 
 from froide.account.forms import NewUserForm, AddressForm
 from froide.team.views import AssignTeamView
-from froide.helper.utils import render_400, render_403
+from froide.helper.utils import render_400, render_403, get_redirect
 
 from ..models import FoiRequest, FoiEvent
 from ..forms import (
@@ -16,7 +16,9 @@ from ..forms import (
     MakePublicBodySuggestionForm, PublicBodySuggestionsForm
 )
 from ..utils import check_throttle
-from ..services import CreateSameAsRequestService
+from ..services import (
+    CreateSameAsRequestService, ActivatePendingRequestService
+)
 from ..auth import can_write_foirequest
 from ..hooks import registry
 
@@ -292,3 +294,31 @@ def extend_deadline(request, foirequest):
 
 class SetTeamView(AssignTeamView):
     model = FoiRequest
+
+
+@require_POST
+@allow_write_foirequest
+def confirm_request(request, foirequest):
+    if foirequest.status != 'awaiting_user_confirmation':
+        return render_400(request)
+
+    req_service = ActivatePendingRequestService({'foirequest': foirequest})
+    foirequest = req_service.process(request=request)
+    if not foirequest:
+        return render_400(request)
+
+    return redirect(foirequest)
+
+
+@require_POST
+@allow_write_foirequest
+def delete_request(request, foirequest):
+    if foirequest.status != 'awaiting_user_confirmation':
+        return render_400(request)
+
+    if foirequest.user != request.user:
+        return render_400(request)
+
+    foirequest.delete()
+
+    return get_redirect(request)

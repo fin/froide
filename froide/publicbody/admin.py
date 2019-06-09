@@ -128,7 +128,7 @@ class PublicBodyBaseAdminMixin(
         }),
         (_('Advanced'), {
             'classes': ('collapse',),
-            'fields': ('site', 'number_of_requests', 'website_dump', 'wikidata_item'),
+            'fields': ('site', 'number_of_requests', 'website_dump',),
         }),
         (_('Meta'), {
             'fields': ('_created_by', 'created_at', '_updated_by', 'updated_at'),
@@ -273,15 +273,14 @@ class PublicBodyBaseAdminMixin(
     def show_georegions(self, request, queryset):
         opts = self.model._meta
 
-        queryset = queryset
         context = {
             'opts': opts,
             'media': self.media,
             'applabel': opts.app_label,
             'no_regions': queryset.filter(regions=None),
-            'region_string': ','.join([
-                str(reg.id) for pb in queryset.exclude(regions=None) for reg in pb.regions.all()
-            ])
+            'regions': json.dumps({
+                reg.id: pb.id for pb in queryset.exclude(regions=None) for reg in pb.regions.all()
+            })
         }
 
         # Display the confirmation page

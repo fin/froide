@@ -137,10 +137,7 @@ class RequestTest(TestCase):
         message = mail.outbox[1]
         self.assertIn('Legal Note: This mail was sent through a Freedom Of Information Portal.', message.body)
         self.assertIn(req.secret_address, message.extra_headers.get('Reply-To', ''))
-        if settings.FROIDE_CONFIG['dryrun']:
-            self.assertEqual(message.to[0], "%s@%s" % (req.public_body.email.replace("@", "+"), settings.FROIDE_CONFIG['dryrun_domain']))
-        else:
-            self.assertEqual(message.to[0], req.public_body.email)
+        self.assertEqual(message.to[0], req.public_body.email)
         self.assertEqual(message.subject, '%s [#%s]' % (req.title, req.pk))
         resp = self.client.post(reverse('foirequest-set_status',
             kwargs={"slug": req.slug}))
@@ -322,11 +319,7 @@ class RequestTest(TestCase):
                 mail.outbox))
         self.assertEqual(len(messages), 1)
         message = messages[0]
-        if settings.FROIDE_CONFIG['dryrun']:
-            self.assertEqual(message.to[0], "%s@%s" % (
-                pb.email.replace("@", "+"), settings.FROIDE_CONFIG['dryrun_domain']))
-        else:
-            self.assertEqual(message.to[0], pb.email)
+        self.assertEqual(message.to[0], pb.email)
         self.assertEqual(message.subject, '%s [#%s]' % (req.title, req.pk))
 
     def test_redirect_after_request(self):
@@ -1389,8 +1382,8 @@ class RequestTest(TestCase):
         self.assertIn('publicbody', response.context['publicbody_form'].errors)
         self.assertEqual(len(response.context['publicbody_form'].errors), 1)
 
-    @patch('froide.foirequest.views.attachment.redact_file',
-           lambda x, y: factories.TEST_PDF_PATH)
+    @patch('froide.foirequest.views.attachment.redact_attachment_task.delay',
+           lambda a, b, c: None)
     def test_redact_attachment(self):
         foirequest = FoiRequest.objects.all()[0]
         message = foirequest.messages[0]
@@ -1421,6 +1414,11 @@ class RequestTest(TestCase):
 
         old_att = FoiAttachment.objects.get(id=att.id)
         self.assertFalse(old_att.can_approve)
+        # Redaction happens in background task, mocked away
+        new_att = old_att.redacted
+        self.assertTrue(new_att.is_redacted)
+        self.assertFalse(new_att.approved)
+        self.assertEqual(new_att.file, '')
 
     def test_extend_deadline(self):
         foirequest = FoiRequest.objects.all()[0]

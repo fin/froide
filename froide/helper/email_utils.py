@@ -73,7 +73,7 @@ def get_unread_mails(host, port, user, password, ssl=True):
 
 def make_address(email, name=None):
     if name:
-        return '"%s" <%s>' % (name, email)
+        return '"%s" <%s>' % (name.replace('"', ''), email)
     return email
 
 
@@ -167,12 +167,12 @@ class ParsedEmail(object):
                     return True
 
         from_field = self.from_
-        if AUTO_REPLY_EMAIL_REGEX is not None:
+        if from_field and AUTO_REPLY_EMAIL_REGEX is not None:
             if AUTO_REPLY_EMAIL_REGEX.search(from_field[0]):
                 return True
 
         subject = self.subject
-        if AUTO_REPLY_SUBJECT_REGEX is not None:
+        if subject and AUTO_REPLY_SUBJECT_REGEX is not None:
             if AUTO_REPLY_SUBJECT_REGEX.search(subject) is not None:
                 return True
 

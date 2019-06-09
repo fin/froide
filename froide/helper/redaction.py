@@ -1,7 +1,8 @@
-import os
 import base64
-import tempfile
 import io
+import os
+import shutil
+import tempfile
 import zlib
 
 from PyPDF2 import PdfFileReader, PdfFileWriter
@@ -15,9 +16,11 @@ from reportlab.pdfbase import pdfmetrics
 from wand.image import Image
 from wand.drawing import Drawing
 from wand.color import Color
+from wand.exceptions import DelegateError, WandError
 
 from .document import (
-    PDF_FILETYPES, decrypt_pdf_in_place, rewrite_pdf_in_place
+    PDF_FILETYPES, decrypt_pdf_in_place, rewrite_pdf_in_place,
+    rewrite_hard_pdf_in_place
 )
 
 
@@ -30,68 +33,105 @@ def can_redact_file(filetype, name=None):
 def rewrite_pdf(pdf_file):
     pdf_file_name = rewrite_pdf_in_place(pdf_file.name)
     if pdf_file_name is None:
-        return None, None
-    pdf_file = open(pdf_file_name, 'rb')
-    pdf_reader = PdfFileReader(pdf_file, strict=False)
-    return pdf_file, pdf_reader
+        return None
+    return open(pdf_file_name, 'rb')
+
+
+def rewrite_hard_pdf(pdf_file):
+    pdf_file_name = rewrite_hard_pdf_in_place(pdf_file.name)
+    if pdf_file_name is None:
+        return None
+    return open(pdf_file_name, 'rb')
 
 
 def decrypt_pdf(pdf_file):
     pdf_file_name = decrypt_pdf_in_place(pdf_file.name)
     if pdf_file_name is None:
-        return None, None
-    pdf_file = open(pdf_file_name, 'rb')
-    pdf_reader = PdfFileReader(pdf_file, strict=False)
-    return pdf_file, pdf_reader
+        return None
+    return open(pdf_file_name, 'rb')
+
+
+class PDFException(Exception):
+    def __init__(self, exc, reason):
+        self.exc = exc
+        self.reason = reason
 
 
 def redact_file(pdf_file, instructions):
+    try:
+        outpath = tempfile.mkdtemp()
+        copied_filename = os.path.join(outpath, 'original.pdf')
+        with open(copied_filename, 'wb') as f:
+            f.write(pdf_file.read())
+        with open(copied_filename, 'rb') as f:
+            output_file = try_redacting_file(f, outpath, instructions)
+        with open(output_file, 'rb') as f:
+            return f.read()
+    finally:
+        shutil.rmtree(outpath)
+
+
+def try_redacting_file(pdf_file, outpath, instructions):
+    tries = 0
+    while True:
+        try:
+            pdf_file = rewrite_pdf(pdf_file)
+            return _redact_file(pdf_file, outpath, instructions)
+        except PDFException as e:
+            tries += 1
+            if tries > 2:
+                raise Exception('PDF Redaction Error')
+            if e.reason == 'rewrite':
+                next_pdf_file = rewrite_pdf(pdf_file)
+                if next_pdf_file is None:
+                    next_pdf_file = rewrite_hard_pdf(pdf_file)
+            elif e.reason == 'decrypt':
+                next_pdf_file = decrypt_pdf(pdf_file)
+            if next_pdf_file is None:
+                raise Exception('PDF Rewrite Error')
+            pdf_file = next_pdf_file
+
+
+def _redact_file(pdf_file, outpath, instructions, tries=0):
     dpi = 300
     load_invisible_font()
     output = PdfFileWriter()
     try:
         pdf_reader = PdfFileReader(pdf_file, strict=False)
-    except (PdfReadError, ValueError):
-        pdf_file, pdf_reader = rewrite_pdf(pdf_file)
-        if pdf_file is None:
-            raise Exception('PDF Rewrite Error')
+    except (PdfReadError, ValueError, OSError) as e:
+        raise PDFException(e, 'rewrite')
 
-    num_pages = None
     try:
         num_pages = pdf_reader.getNumPages()
-    except KeyError:  # catch KeyError '/Pages'
-        pdf_file, pdf_reader = rewrite_pdf(pdf_file)
-        if pdf_file is None:
-            raise Exception('PDF Rewrite Error')
-    except PdfReadError:
-        pdf_file, pdf_reader = decrypt_pdf(pdf_file)
-        if pdf_file is None:
-            raise Exception('PDF Rewrite Error')
-
-    if num_pages is None:
-        num_pages = pdf_reader.getNumPages()
+    except KeyError as e:  # catch KeyError '/Pages'
+        raise PDFException(e, 'rewrite')
+    except PdfReadError as e:
+        raise PDFException(e, 'decrypt')
 
     assert num_pages == len(instructions)
-    for pageNum, instr in enumerate(instructions):
+    for page_idx, instr in enumerate(instructions):
         instr['width'] = float(instr['width'])
-        if not instr['rects']:
-            page = pdf_reader.getPage(pageNum)
-        else:
-            page = get_redacted_page(pdf_file, pageNum, instr, dpi)
+
+        try:
+            if not instr['rects']:
+                page = pdf_reader.getPage(page_idx)
+            else:
+                page = get_redacted_page(pdf_file, page_idx, instr, dpi)
+        except (WandError, DelegateError, ValueError) as e:
+            raise PDFException(e, 'rewrite')
+
         output.addPage(page)
 
-    path = tempfile.mkdtemp()
-    output_filename = os.path.join(path, 'final.pdf')
+    output_filename = os.path.join(outpath, 'final.pdf')
     with open(output_filename, 'wb') as f:
         output.write(f)
     return output_filename
 
 
-def get_redacted_page(pdf_file, pageNum, instr, dpi):
+def get_redacted_page(pdf_file, page_idx, instr, dpi):
     writer = io.BytesIO()
     pdf = canvas.Canvas(writer)
-    filename = "{}[{}]".format(pdf_file.name, pageNum)
-    with Image(filename=filename, resolution=dpi) as image:
+    with Image(filename='{}[{}]'.format(pdf_file.name, page_idx), resolution=dpi) as image:
         image.background_color = Color('white')
         image.format = 'jpg'
         image.alpha_channel = 'remove'
@@ -181,5 +221,5 @@ CMGjwvxTsr74/f/F95m3TH9x8o0/TU//N+7/D/ScVcA=
 """.encode('latin1')
     uncompressed = bytearray(zlib.decompress(base64.decodebytes(font)))
     ttf = io.BytesIO(uncompressed)
-    setattr(ttf, "name", "(invisible.ttf)")
+    ttf.name = "(invisible.ttf)"
     pdfmetrics.registerFont(TTFont('invisible', ttf))

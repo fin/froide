@@ -9,14 +9,15 @@ from django.contrib.auth.forms import UserCreationForm, UserChangeForm
 
 from froide.foirequest.models import FoiRequest
 from froide.helper.csv_utils import export_csv_response
-from froide.helper.admin_utils import TaggitListFilter
+from froide.helper.admin_utils import TaggitListFilter, MultiFilterMixin
 
 from .models import User, TaggedUser, UserTag
 from .services import AccountService
 from .export import get_export_url
 from .tasks import start_export_task, send_bulk_mail
 from .utils import (
-    delete_all_unexpired_sessions_for_user, cancel_user
+    delete_all_unexpired_sessions_for_user, cancel_user,
+    make_account_private
 )
 
 
@@ -40,8 +41,11 @@ class TaggedUserAdmin(admin.ModelAdmin):
     raw_id_fields = ('tag', 'content_object')
 
 
-class UserTagsFilter(TaggitListFilter):
+class UserTagListFilter(MultiFilterMixin, TaggitListFilter):
     tag_class = TaggedUser
+    title = 'Tags'
+    parameter_name = 'tags__slug'
+    lookup_name = '__in'
 
 
 class UserAdmin(DjangoUserAdmin):
@@ -69,14 +73,14 @@ class UserAdmin(DjangoUserAdmin):
     list_filter = list(DjangoUserAdmin.list_filter) + [
         'private', 'terms', 'is_trusted',
         'newsletter', 'is_deleted',
-        UserTagsFilter
+        UserTagListFilter
     ]
     search_fields = ('email', 'username', 'first_name', 'last_name')
 
     actions = [
         'export_csv', 'resend_activation',
-        'send_mail', 'delete_sessions', 'cancel_users',
-        'deactivate_users', 'export_user_data',
+        'send_mail', 'delete_sessions', 'make_private',
+        'cancel_users', 'deactivate_users', 'export_user_data',
     ]
 
     def export_csv(self, request, queryset):
@@ -159,6 +163,15 @@ class UserAdmin(DjangoUserAdmin):
         self.message_user(request, _("Users deactivated."))
         return None
     deactivate_users.short_description = _('Deactivate users')
+
+    def make_private(self, request, queryset):
+        user = queryset[0]
+        if user.private:
+            return None
+        make_account_private(user)
+        self.message_user(request, _("User made private."))
+        return None
+    make_private.short_description = _('Make user private')
 
     def export_user_data(self, request, queryset):
         if not request.user.is_superuser:

@@ -15,7 +15,6 @@ from taggit.managers import TaggableManager
 from taggit.models import TagBase, TaggedItemBase
 from taggit.utils import edit_string_for_tags
 from treebeard.mp_tree import MP_Node, MP_NodeManager
-from django_wikidata.fields import WikidataItemField
 
 from froide.georegion.models import GeoRegion
 
@@ -348,7 +347,7 @@ class PublicBody(models.Model):
     site = models.ForeignKey(Site, verbose_name=_("Site"),
             null=True, on_delete=models.SET_NULL, default=settings.SITE_ID)
 
-    wikidata_item = WikidataItemField(blank=True)
+    wikidata_item = models.CharField(max_length=50, blank=True)
 
     jurisdiction = models.ForeignKey(Jurisdiction, verbose_name=_('Jurisdiction'),
             blank=True, null=True, on_delete=models.SET_NULL)

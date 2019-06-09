@@ -115,10 +115,8 @@ class Base(Configuration):
 
     # Sub path in MEDIA_ROOT that will hold FOI attachments
     FOI_MEDIA_PATH = values.Value('foi')
-    FOI_MEDIA_URL = values.Value('/files/')
-    FOI_MEDIA_DOMAIN = values.Value('')
-    FOI_MEDIA_TOKENS = False
     FOI_MEDIA_TOKEN_EXPIRY = 2 * 60
+    INTERNAL_MEDIA_PREFIX = values.Value('/protected/')
 
     # Absolute path to the directory static files should be collected to.
     # Don't put anything in this directory yourself; store your static files
@@ -141,9 +139,6 @@ class Base(Configuration):
     # URL that handles the static files like app media.
     # Example: "http://media.lawrence.com"
     STATIC_URL = values.Value('/static/')
-
-    USE_X_ACCEL_REDIRECT = values.BooleanValue(False)
-    X_ACCEL_REDIRECT_PREFIX = values.Value('/protected')
 
     # ## URLs that can be translated to a secret value
 
@@ -468,13 +463,11 @@ class Base(Configuration):
         closings=[rec(r"Sincerely yours,?")],
         public_body_boosts={},
         autocomplete_body_boosts={},
-        dryrun=False,
         read_receipt=False,
         delivery_receipt=False,
         dsn=False,
         delivery_reporter=None,
         request_throttle=None,  # Set to [(15, 7 * 24 * 60 * 60),] for 15 requests in 7 days
-        dryrun_domain="testmail.example.com",
         allow_pseudonym=False,
         doc_conversion_binary=None,  # replace with libreoffice instance
         doc_conversion_call_func=None,  # see settings_test for use
@@ -554,6 +547,12 @@ class Dev(Base):
 
 class TestBase(Base):
     DEBUG = False
+
+    PASSWORD_HASHERS = [
+        'django.contrib.auth.hashers.MD5PasswordHasher',
+    ]
+
+    ELASTICSEARCH_DSL_SIGNAL_PROCESSOR = 'django_elasticsearch_dsl.signals.BaseSignalProcessor'
 
     @property
     def TEMPLATES(self):
@@ -692,15 +691,6 @@ class SSLSite(object):
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTOCOL', 'https')
     CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_SECURE = True
-
-
-class NginxSecureStatic(object):
-    USE_X_ACCEL_REDIRECT = True
-    X_ACCEL_REDIRECT_PREFIX = values.Value('/protected')
-
-
-class SSLNginxProduction(SSLSite, NginxSecureStatic, Production):
-    pass
 
 
 class AmazonS3(object):

@@ -15,6 +15,7 @@ from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView, RedirectView
 
 from froide.foirequest.models import FoiRequest, FoiEvent
+from froide.foirequest.services import ActivatePendingRequestService
 from froide.helper.utils import render_403, get_redirect, get_redirect_url
 
 from . import account_activated
@@ -86,7 +87,10 @@ def confirm(request, user_id, secret, request_id=None):
         params['ref'] = request.GET['ref']
 
     if request_id is not None:
-        foirequest = FoiRequest.confirmed_request(user, request_id)
+        req_service = ActivatePendingRequestService({
+            'request_id': request_id
+        })
+        foirequest = req_service.process(request=request)
         if foirequest:
             params['request'] = str(foirequest.pk).encode('utf-8')
     default_url = '%s?%s' % (reverse('account-confirmed'), urlencode(params))
@@ -98,32 +102,39 @@ def go(request, user_id, secret, url):
         if request.user.id != int(user_id):
             messages.add_message(request, messages.INFO,
                 _('You are logged in with a different user account. Please logout first before using this link.'))
-    else:
-        user = get_object_or_404(auth.get_user_model(), pk=int(user_id))
-        account_manager = AccountService(user)
-        if account_manager.check_autologin_secret(secret):
-            if user.is_deleted or user.is_blocked:
-                # This will fail, but that's OK here
-                return redirect(url)
-            if not user.is_active:
-                # Confirm user account (link came from email)
-                user.date_deactivated = None
-                user.is_active = True
-                user.save()
-                account_activated.send_robust(sender=user)
-            auth.login(request, user)
-    return redirect(url)
+        return redirect(url)
+
+    user = get_object_or_404(auth.get_user_model(), pk=int(user_id))
+    account_manager = AccountService(user)
+    if account_manager.check_autologin_secret(secret):
+        if user.is_deleted or user.is_blocked:
+            # This will fail, but that's OK here
+            return redirect(url)
+        if not user.is_active:
+            # Confirm user account (link came from email)
+            user.date_deactivated = None
+            user.is_active = True
+            user.save()
+            account_activated.send_robust(sender=user)
+        auth.login(request, user)
+        return redirect(url)
+
+    # If login-link fails, prompt login with redirect
+    return get_redirect(request, default='account-login', params={'next': url})
 
 
 def profile(request, slug):
     user = get_object_or_404(auth.get_user_model(), username=slug)
     if user.private:
         raise Http404
-    foirequests = FoiRequest.published.filter(user=user).order_by('-first_message')
+    foirequests = FoiRequest.published.filter(user=user)
+    foirequest_count = foirequests.count()
+    foirequests = foirequests.order_by('-first_message')[:10]
     foievents = FoiEvent.objects.filter(public=True, user=user)[:20]
     return render(request, 'account/profile.html', {
-        'profile_user': user,
+        'profile': user,
         'requests': foirequests,
+        'request_count': foirequest_count,
         'events': foievents
     })
 
