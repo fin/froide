@@ -25,7 +25,7 @@ class PDFProcessor(object):
         self.filename = filename
         self.pdf_reader = PdfFileReader(filename)
         self.num_pages = self.pdf_reader.getNumPages()
-        self.language = language
+        self.language = language if not '-' in language else language.split('-')[0]
         self.config = config or {}
 
     def get_meta(self):
