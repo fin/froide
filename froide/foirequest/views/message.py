@@ -35,9 +35,14 @@ from ..utils import check_throttle
 from ..tasks import convert_images_to_pdf_task
 from ..pdf_generator import LetterPDFGenerator
 from ..services import ResendBouncedMessageService
+from ..decorators import (
+    allow_write_foirequest,
+    allow_moderate_foirequest,
+    allow_write_or_moderate_foirequest,
+    allow_write_or_moderate_pii_foirequest,
+)
 
 from .request import show_foirequest
-from .request_actions import allow_write_foirequest, allow_moderate_foirequest
 
 
 logger = logging.getLogger(__name__)
@@ -462,7 +467,7 @@ def upload_attachments(request, foirequest, message_id):
 
 
 @require_POST
-@allow_write_foirequest
+@allow_write_or_moderate_foirequest
 def set_message_sender(request, foirequest, message_id):
     message = get_object_or_404(FoiMessage, request=foirequest, pk=message_id)
     if not message.is_response:
@@ -483,7 +488,7 @@ def set_message_sender(request, foirequest, message_id):
 
 
 @require_POST
-@allow_write_foirequest
+@allow_write_or_moderate_foirequest
 def set_message_recipient(request, foirequest, message_id):
     message = get_object_or_404(FoiMessage, request=foirequest, pk=message_id)
     if message.is_response:
@@ -539,7 +544,7 @@ def edit_message(request, foirequest, message_id):
 
 
 @require_POST
-@allow_write_foirequest
+@allow_write_or_moderate_pii_foirequest
 def redact_message(request, foirequest, message_id):
     message = get_object_or_404(FoiMessage, request=foirequest, pk=message_id)
     form = RedactMessageForm(request.POST)
