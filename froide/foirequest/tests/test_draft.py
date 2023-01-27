@@ -1,11 +1,11 @@
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 from django.utils.html import escape
-from django.contrib.auth import get_user_model
 
-from froide.publicbody.models import PublicBody
-from froide.foirequest.tests import factories
 from froide.foirequest.models import FoiRequest, RequestDraft
+from froide.foirequest.tests import factories
+from froide.publicbody.models import PublicBody
 
 User = get_user_model()
 
@@ -173,7 +173,7 @@ class RequestDraftTest(TestCase):
             reverse("foirequest-claim_draft", kwargs={"token": str(draft.token)})
         )
         self.assertEqual(response.status_code, 302)
-        # import ipdb ; ipdb.set_trace()
+
         self.assertTrue(response["Location"].endswith(draft.get_absolute_url()))
         draft = RequestDraft.objects.get(id=draft.id)
         self.assertEqual(draft.user, user)

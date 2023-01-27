@@ -2,21 +2,23 @@
 {% load i18n %}
 {% block object-tools-items %}
 {% if original.pk %}
-  <li>
-    <a href="{% url 'admin:foirequest_foirequest_changelist' %}?public_body={{ original.pk }}">
-      {% trans "This public body's requests" %}
-    </a>
-  </li>
-  <li>
-    <a href="{% url 'admin:foirequest_foimessage_changelist' %}?recipient_public_body={{ original.pk }}">
-      {% trans "This public body's received messages" %}
-    </a>
-  </li>
-  <li>
-    <a href="{% url 'admin:foirequest_foimessage_changelist' %}?sender_public_body={{ original.pk }}">
-      {% trans "This public body's sent messages" %}
-    </a>
-  </li>
+  {% if perms.foirequest %}
+    <li>
+      <a href="{% url 'admin:foirequest_foirequest_changelist' %}?public_body={{ original.pk }}">
+        {% trans "This public body's requests" %}
+      </a>
+    </li>
+    <li>
+      <a href="{% url 'admin:foirequest_foimessage_changelist' %}?recipient_public_body={{ original.pk }}">
+        {% trans "This public body's received messages" %}
+      </a>
+    </li>
+    <li>
+      <a href="{% url 'admin:foirequest_foimessage_changelist' %}?sender_public_body={{ original.pk }}">
+        {% trans "This public body's sent messages" %}
+      </a>
+    </li>
+  {% endif %}
   {% if original.change_proposal_count %}
     <li>
       <a href="{% url 'publicbody-accept' pk=original.pk %}" target="_blank">
@@ -32,20 +34,10 @@
   {% if not original.pk %}
     <script>
     (function(){
+      const entries = new URLSearchParams(window.location.search)
 
-      function getQueryVariable(variable) {
-        var query = window.location.search.substring(1);
-        var vars = query.split('&');
-        for (var i = 0; i < vars.length; i++) {
-          var pair = vars[i].split('=');
-          if (decodeURIComponent(pair[0]) == variable) {
-            return decodeURIComponent(pair[1]);
-          }
-        }
-      }
-
-      document.getElementById('id_regions').value = getQueryVariable('regions') || '';
-      document.getElementById('id_name').value = getQueryVariable('name') || '';
+      document.getElementById('id_regions').value = entries.get('regions') || '';
+      document.getElementById('id_name').value = entries.get('name') || '';
     }())
     </script>
   {% endif %}

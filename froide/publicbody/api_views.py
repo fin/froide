@@ -1,29 +1,26 @@
+import json
+
 from django.conf import settings
-from django.utils import translation
 from django.contrib.gis.geos import Point
-
-from rest_framework import serializers
-from rest_framework import viewsets
-from rest_framework.response import Response
-from rest_framework.decorators import action
-from rest_framework.settings import api_settings
-
-from rest_framework_jsonp.renderers import JSONPRenderer
-
-from elasticsearch_dsl.query import Q
+from django.utils import translation
 
 from django_filters import rest_framework as filters
+from elasticsearch_dsl.query import Q
+from rest_framework import serializers, viewsets
+from rest_framework.decorators import action
+from rest_framework.settings import api_settings
+from rest_framework_jsonp.renderers import JSONPRenderer
 
+from froide.georegion.models import GeoRegion
 from froide.helper.api_utils import (
-    SearchFacetListSerializer,
     OpenRefineReconciliationMixin,
+    SearchFacetListSerializer,
 )
 from froide.helper.search import SearchQuerySetWrapper
 from froide.helper.search.api_views import ESQueryMixin
-from froide.georegion.models import GeoRegion
 
-from .models import PublicBody, Category, Jurisdiction, FoiLaw, Classification
 from .documents import PublicBodyDocument
+from .models import Category, Classification, FoiLaw, Jurisdiction, PublicBody
 
 
 def get_language_from_query(request):
@@ -113,10 +110,8 @@ class SimpleFoiLawSerializer(serializers.HyperlinkedModelSerializer):
 
     def to_representation(self, instance):
         """Activate language based on request query param."""
-        request = self.context.get("request")
-        if request:
-            lang = request.GET.get("language", settings.LANGUAGE_CODE)
-            instance.set_current_language(lang)
+        language = get_language_from_query(self.context.get("request"))
+        instance.set_current_language(language)
         ret = super().to_representation(instance)
         return ret
 
@@ -135,6 +130,8 @@ class FoiLawSerializer(SimpleFoiLawSerializer):
 
 class FoiLawFilter(filters.FilterSet):
     id = filters.CharFilter(method="id_filter")
+    q = filters.CharFilter(method="search_filter")
+    meta = filters.BooleanFilter()
 
     class Meta:
         model = FoiLaw
@@ -147,6 +144,9 @@ class FoiLawFilter(filters.FilterSet):
         except ValueError:
             return queryset
         return queryset.filter(pk__in=ids)
+
+    def search_filter(self, queryset, name, value):
+        return queryset.filter(translations__name__icontains=value)
 
 
 class FoiLawViewSet(viewsets.ReadOnlyModelViewSet):
@@ -164,6 +164,21 @@ class FoiLawViewSet(viewsets.ReadOnlyModelViewSet):
             "jurisdiction",
             "mediator",
         ).prefetch_related("combined", "translations")
+
+    @action(
+        detail=False, methods=["get"], url_path="autocomplete", url_name="autocomplete"
+    )
+    def autocomplete(self, request):
+        page = self.paginate_queryset(self.filter_queryset(self.get_queryset()))
+        return self.get_paginated_response(
+            [
+                {
+                    "value": x.pk,
+                    "label": str(x.name),
+                }
+                for x in page
+            ]
+        )
 
 
 class TreeMixin(object):
@@ -292,12 +307,12 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
         detail=False, methods=["get"], url_path="autocomplete", url_name="autocomplete"
     )
     def autocomplete(self, request):
-        query = request.GET.get("query", "")
-        tags = []
-        if query:
-            tags = Category.objects.filter(name__istartswith=query)
-            tags = [t for t in tags.values_list("name", flat=True)]
-        return Response(tags)
+        page = self.paginate_queryset(
+            self.filter_queryset(self.get_queryset()).only("name").order_by("name")
+        )
+        return self.get_paginated_response(
+            [{"value": t.name, "label": t.name} for t in page]
+        )
 
 
 class SimplePublicBodySerializer(serializers.HyperlinkedModelSerializer):
@@ -314,6 +329,7 @@ class SimplePublicBodySerializer(serializers.HyperlinkedModelSerializer):
     )
 
     site_url = serializers.CharField(source="get_absolute_domain_url")
+    geo = serializers.SerializerMethodField()
 
     class Meta:
         model = PublicBody
@@ -337,7 +353,13 @@ class SimplePublicBodySerializer(serializers.HyperlinkedModelSerializer):
             "site_url",
             "jurisdiction",
             "request_note_html",
+            "geo",
         )
+
+    def get_geo(self, obj):
+        if obj.geo is not None:
+            return json.loads(obj.geo.json)
+        return None
 
 
 class PublicBodyListSerializer(serializers.HyperlinkedModelSerializer):
@@ -363,6 +385,7 @@ class PublicBodyListSerializer(serializers.HyperlinkedModelSerializer):
     )
 
     site_url = serializers.CharField(source="get_absolute_domain_url")
+    geo = serializers.SerializerMethodField()
 
     class Meta:
         model = PublicBody
@@ -396,7 +419,13 @@ class PublicBodyListSerializer(serializers.HyperlinkedModelSerializer):
             "alternative_emails",
             "wikidata_item",
             "extra_data",
+            "geo",
         )
+
+    def get_geo(self, obj):
+        if obj.geo is not None:
+            return json.loads(obj.geo.json)
+        return None
 
 
 class PublicBodySerializer(PublicBodyListSerializer):
@@ -428,7 +457,9 @@ class PublicBodyFilter(SearchFilterMixin, filters.FilterSet):
 
     def category_filter(self, queryset, name, value):
         for v in value:
-            queryset = queryset.filter(categories__in=Category.get_tree(parent=v))
+            queryset = queryset.filter(
+                categories__in=Category.get_tree(parent=v)
+            ).distinct()
         return queryset
 
     def regions_filter(self, queryset, name, value):
@@ -511,6 +542,15 @@ class PublicBodyViewSet(
     @action(detail=False, methods=["get"])
     def search(self, request):
         return self.search_view(request)
+
+    @action(
+        detail=False, methods=["get"], url_path="autocomplete", url_name="autocomplete"
+    )
+    def autocomplete(self, request):
+        page = self.paginate_queryset(self.filter_queryset(self.get_queryset()))
+        return self.get_paginated_response(
+            [{"value": t.id, "label": t.name} for t in page]
+        )
 
     def get_serializer_context(self):
         ctx = super(PublicBodyViewSet, self).get_serializer_context()

@@ -1,12 +1,14 @@
-from collections import namedtuple, defaultdict
 import contextlib
-import re
 import imaplib
-from typing import Iterator, Tuple, Optional, Union
+import re
+from collections import defaultdict, namedtuple
+from dataclasses import dataclass
+from email.message import EmailMessage
+from enum import Enum
+from typing import Iterator, Optional, Tuple, Union
 
 from django.conf import settings
 from django.utils import timezone
-
 
 AUTO_REPLY_SUBJECT_REGEX = settings.FROIDE_CONFIG.get("auto_reply_subject_regex", None)
 AUTO_REPLY_EMAIL_REGEX = settings.FROIDE_CONFIG.get("auto_reply_email_regex", None)
@@ -45,12 +47,38 @@ BOUNCE_HEADERS = (
 
 DsnStatus = namedtuple("DsnStatus", "class_ subject detail")
 
+
+class AuthenticityCheck(Enum):
+    SPF = "SPF"
+    DKIM = "DKIM"
+    DMARC = "DMARC"
+
+
+@dataclass
+class AuthenticityStatus:
+    check: AuthenticityCheck
+    status: str
+    failed: bool
+    details: str
+
+    def __str__(self):
+        return self.details
+
+    def to_dict(self):
+        return {
+            "check": self.check.value,
+            "status": self.status,
+            "failed": self.failed,
+            "details": self.details,
+        }
+
+
 BounceResult = namedtuple(
     "BounceResult", "status is_bounce bounce_type diagnostic_code timestamp"
 )
 
 GENERIC_ERROR = DsnStatus(5, 0, 0)
-MAILBOX_FULL = DsnStatus(5, 2, 2)
+MAILBOX_FULL = DsnStatus(5, 5, 2)
 
 UID_RE = re.compile(r"UID\s+(?P<uid>\d+)")
 
@@ -135,7 +163,7 @@ def retrieve_mail_by_message_id(
     status, count = mailbox.select("Inbox")
     # find message by message-id
     status, [msg_ids] = mailbox.search(
-        None, 'HEADER "Message-Id" "{message_id}"'.format(message_id=message_id)
+        None, 'HEADER "Message-Id" "{message_id}"'.format(message_id=message_id.strip())
     )
     messages = msg_ids.split()
     assert len(messages) <= 1
@@ -154,7 +182,7 @@ def unflag_mail(mailbox, uid):
     mailbox.close()
 
 
-def make_address(email, name=None):
+def make_address(email: str, name: Optional[str] = None):
     if name:
         return '"%s" <%s>' % (name.replace('"', ""), email)
     return email
@@ -165,11 +193,13 @@ class UnsupportedMailFormat(Exception):
 
 
 def get_bounce_headers(msgobj):
+    from .email_parsing import parse_header_field
+
     headers = defaultdict(list)
     for part in msgobj.walk():
         for k, v in part.items():
             if k in BOUNCE_HEADERS:
-                headers[k].append(v)
+                headers[k].append(parse_header_field(v))
     return headers
 
 
@@ -251,3 +281,55 @@ def detect_auto_reply(from_field, subject="", msgobj=None):
             return True
 
     return False
+
+
+def check_spf(msgobj: EmailMessage) -> Optional[AuthenticityStatus]:
+    spf_headers = msgobj.get_all("Received-SPF", [])
+    if not spf_headers:
+        return
+    header = spf_headers[0]
+    status = header.split(" ", 1)[0]
+    return AuthenticityStatus(
+        check=AuthenticityCheck.SPF,
+        status=status,
+        failed=status.lower() == "fail",
+        details=header,
+    )
+
+
+DMARC_MATCH = re.compile(r"\sdmarc=(\w+);?\s")
+
+
+def check_dmarc(msgobj: EmailMessage) -> Optional[AuthenticityStatus]:
+    auth_headers = msgobj.get_all("Authentication-Results", [])
+    dmarc_headers = [h for h in auth_headers if DMARC_MATCH.search(h) is not None]
+    if not dmarc_headers:
+        return
+    header = dmarc_headers[0]
+    match = DMARC_MATCH.search(header)
+    status = match.group(1)
+    return AuthenticityStatus(
+        check=AuthenticityCheck.DMARC,
+        status=status,
+        failed=status.lower() == "fail",
+        details=header,
+    )
+
+
+DKIM_MATCH = re.compile(r"\sdkim=(\w+);?\s")
+
+
+def check_dkim(msgobj: EmailMessage) -> Optional[AuthenticityStatus]:
+    auth_headers = msgobj.get_all("Authentication-Results", [])
+    dkim_headers = [h for h in auth_headers if DKIM_MATCH.search(h) is not None]
+    if not dkim_headers:
+        return
+    header = dkim_headers[0]
+    match = DKIM_MATCH.search(header)
+    status = match.group(1)
+    return AuthenticityStatus(
+        check=AuthenticityCheck.DKIM,
+        status=status,
+        failed=status.lower() == "fail",
+        details=header,
+    )

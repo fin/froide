@@ -1,19 +1,20 @@
-from collections import namedtuple
 import logging
+from collections import namedtuple
 
-from django.db import models
 from django.conf import settings
-from django.utils.translation import gettext_lazy as _
-from django.utils import timezone
-from django.utils.timesince import timesince
-from django.utils.safestring import mark_safe
-from django.utils.html import format_html
-from django.template.loader import get_template
+from django.db import models
 from django.template import TemplateDoesNotExist
+from django.template.loader import get_template
+from django.utils import timezone
+from django.utils.html import format_html
+from django.utils.safestring import mark_safe
+from django.utils.timesince import timesince
+from django.utils.translation import gettext_lazy as _
 
+from froide.helper.notifications import Notification
 from froide.publicbody.models import PublicBody
 
-from . import FoiRequest, FoiMessage
+from . import FoiMessage, FoiRequest
 
 EventDetail = namedtuple("EventDetail", "description")
 
@@ -34,7 +35,7 @@ class EventName(models.TextChoices):
     MADE_PUBLIC = "made_public", _("the request was made public")
 
     ATTACHMENT_UPLOADED = "attachment_uploaded", _("attachments were uploaded")
-    ATTACHMENT_PUBLISHED = "attachment_published", _("an attachment was published")
+    ATTACHMENT_APPROVED = "attachment_approved", _("an attachment was approved")
     ATTACHMENT_DEPUBLISHED = "attachment_depublished", _(
         "an attachment was depublished"
     )
@@ -46,7 +47,7 @@ class EventName(models.TextChoices):
     REPORTED_COSTS = "reported_costs", _("costs were reported for this request")
     REQUEST_REFUSED = "request_refused", _("the request was marked as refused")
     PARTIALLY_SUCCESSFUL = "partially_successful", _(
-        "the request was marked " "as partially successful"
+        "the request was marked as partially successful"
     )
     BECAME_OVERDUE = "became_overdue", _("request became overdue")
 
@@ -55,9 +56,10 @@ class EventName(models.TextChoices):
     SET_TAGS = "set_tags", _("set tags on request")
 
     DEADLINE_EXTENDED = "deadline_extended", _(
-        "the deadline for the request " "was extended"
+        "the deadline for the request was extended"
     )
     MARK_NOT_FOI = "mark_not_foi", _("the request was marked as not an FOI request")
+    MODERATOR_ACTION = "moderator_action", _("the request was moderated")
     SENDER_CHANGED = "sender_changed", _("sender of message was changed")
     RECIPIENT_CHANGED = "recipient_changed", _("recipient of message was changed")
 
@@ -78,8 +80,8 @@ EVENT_DETAILS = {
         _("Received a message from {public_body}.")
     ),
     EventName.MESSAGE_SENT: EventDetail(_("A message was sent to {public_body}.")),
-    EventName.ATTACHMENT_PUBLISHED: EventDetail(
-        _("An attachment was published on request.")
+    EventName.ATTACHMENT_APPROVED: EventDetail(
+        _("An attachment was approved on request.")
     ),
     EventName.ATTACHMENT_DEPUBLISHED: EventDetail(_("An attachment was depublished.")),
     EventName.REQUEST_REDIRECTED: EventDetail(
@@ -253,3 +255,14 @@ class FoiEvent(models.Model):
 
     def as_html(self):
         return mark_safe(self.detail.description.format(**self.get_html_context()))
+
+    def to_notification(self):
+        return Notification(
+            section=_("Requests"),
+            event_type=self.event_name,
+            object=self.request,
+            object_label=self.request.title,
+            timestamp=self.timestamp,
+            event=self,
+            user_id=self.user_id,
+        )

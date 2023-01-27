@@ -1,33 +1,33 @@
 import json
 from urllib.parse import urlencode
 
-from django.urls import reverse
-from django.shortcuts import get_object_or_404, redirect
-from django.utils.translation import gettext as _, pgettext
-from django.http import Http404
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.views.generic import FormView, DetailView, TemplateView
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator, decorator_from_middleware
+from django.http import Http404
+from django.shortcuts import get_object_or_404, redirect
+from django.urls import reverse
+from django.utils.decorators import decorator_from_middleware, method_decorator
 from django.utils.module_loading import import_string
+from django.utils.translation import gettext as _
+from django.utils.translation import pgettext
+from django.views.decorators.csrf import csrf_exempt
+from django.views.generic import DetailView, FormView, TemplateView
 
-from froide.account.forms import NewUserForm, AddressForm
-from froide.publicbody.forms import PublicBodyForm, MultiplePublicBodyForm
-from froide.publicbody.widgets import get_widget_context
-from froide.publicbody.models import PublicBody
-from froide.publicbody.api_views import PublicBodyListSerializer
-from froide.georegion.models import GeoRegion
+from froide.account.forms import AddressForm, NewUserForm
 from froide.campaign.models import Campaign
+from froide.georegion.models import GeoRegion
 from froide.helper.auth import get_read_queryset
 from froide.helper.utils import update_query_params
+from froide.publicbody.api_views import PublicBodyListSerializer
+from froide.publicbody.forms import MultiplePublicBodyForm, PublicBodyForm
+from froide.publicbody.models import PublicBody
+from froide.publicbody.widgets import get_widget_context
 
-from ..models import FoiRequest, FoiProject, RequestDraft
 from ..forms import RequestForm
-from ..utils import check_throttle
+from ..models import FoiProject, FoiRequest, RequestDraft
 from ..services import CreateRequestService, SaveDraftService
-
+from ..utils import check_throttle
 
 csrf_middleware_class = import_string(
     getattr(
@@ -59,7 +59,9 @@ class FakePublicBodyForm(object):
         return self.publicbodies
 
     def as_json(self):
-        return json.dumps({"fields": {}, "errors": {}, "nonFieldErrors": []})
+        return json.dumps(
+            {"fields": {"publicbody": {}}, "errors": {}, "nonFieldErrors": []}
+        )
 
 
 def replace_user_vars(template_string, user_vars):
@@ -89,6 +91,7 @@ class MakeRequestView(FormView):
             "subject": request.GET.get("subject", ""),
             "body": request.GET.get("body", ""),
             "reference": request.GET.get("ref", ""),
+            "tags": request.GET.get("tags", ""),
             "redirect_url": request.GET.get("redirect", ""),
         }
         user_vars = self.get_user_template_vars()
@@ -130,6 +133,10 @@ class MakeRequestView(FormView):
             "settings": {
                 "user_can_hide_web": settings.FROIDE_CONFIG.get("user_can_hide_web"),
                 "user_can_create_batch": self.can_create_batch(),
+                "non_meaningful_subject_regex": settings.FROIDE_CONFIG.get(
+                    "non_meaningful_subject_regex", []
+                ),
+                "address_regex": settings.FROIDE_CONFIG.get("address_regex", ""),
             },
             "url": {
                 "searchRequests": reverse("api:request-search"),
@@ -165,6 +172,7 @@ class MakeRequestView(FormView):
                 ],
                 # Translators: not url
                 "requests": _("requests"),
+                "close": _("close"),
                 "makeRequest": _("make request"),
                 "writingRequestTo": _("You are writing a request to"),
                 "toMultiPublicBodies": _("To: {count} public bodies").format(
@@ -215,7 +223,10 @@ class MakeRequestView(FormView):
                 "subject": _("Subject"),
                 "defaultLetterStart": _("Please send me the following information:"),
                 "warnFullText": _(
-                    "Watch out! You are requesting information across jurisdictions! If you write the full text, we cannot customize it according to applicable laws. Instead you have to write the text to be jurisdiction agnostic."
+                    "Watch out! You are requesting information across jurisdictions! "
+                    "If you write the full text, we cannot customize it according to "
+                    "applicable laws. Instead you have to write the text to be "
+                    "jurisdiction agnostic."
                 ),
                 "resetFullText": _("Reset text to template version"),
                 "savedFullTextChanges": _("Your previous customized text"),
@@ -254,6 +265,13 @@ class MakeRequestView(FormView):
                 "dontInsertName": _(
                     "Do not insert your name, we will add it automatically at the end of the letter."
                 ),
+                "enterMeaningfulSubject": _(
+                    "Please enter a subject which describes the information you are requesting."
+                ),
+                "pleaseFollowAddressFormat": _(
+                    "Please enter an address in the following format: %(format)s",
+                )
+                % {"format": _("Street address,\nPost Code, City")},
             },
             "regex": {
                 "greetings": [_("Dear Sir or Madam")],
@@ -343,7 +361,7 @@ class MakeRequestView(FormView):
         )
         publicbody_slug = self.kwargs.get("publicbody_slug")
         publicbodies = []
-        if publicbody_ids is not None:
+        if publicbody_ids:
             publicbody_ids = publicbody_ids.split("+")
             try:
                 publicbodies = PublicBody.objects.filter(pk__in=publicbody_ids)
@@ -419,8 +437,16 @@ class MakeRequestView(FormView):
             request_form.add_error(None, _("Draft cannot be used again."))
             error = True
 
-        if request.user.is_authenticated and request.POST.get("save_draft", ""):
-            return self.save_draft(request_form, publicbody_form)
+        if request.user.is_authenticated:
+            if request.POST.get("save_draft", ""):
+                return self.save_draft(request_form, publicbody_form)
+            if request.user.is_blocked:
+                messages.add_message(
+                    self.request,
+                    messages.WARNING,
+                    _("Your account cannot send requests."),
+                )
+                return self.save_draft(request_form, publicbody_form)
 
         user_form = self.get_user_form()
         if not user_form.is_valid():

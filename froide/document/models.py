@@ -3,11 +3,13 @@ from django.db import models
 from filingcabinet.models import (
     AbstractDocument,
     AbstractDocumentCollection,
-    DocumentManager as FCDocumentManager,
-    DocumentCollectionManager as FCDocumentCollectionManager,
-    get_page_image_filename,
-    Page,
+    CollectionDocument,
 )
+from filingcabinet.models import (
+    DocumentCollectionManager as FCDocumentCollectionManager,
+)
+from filingcabinet.models import DocumentManager as FCDocumentManager
+from filingcabinet.models import Page, get_page_image_filename
 
 from froide.helper.auth import (
     can_read_object_authenticated,
@@ -73,7 +75,7 @@ class Document(AbstractDocument):
 
     @classmethod
     def get_serializer_class(cls, detail=False):
-        from .api_views import DocumentSerializer, DocumentDetailSerializer
+        from .api_views import DocumentDetailSerializer, DocumentSerializer
 
         if detail:
             return DocumentDetailSerializer
@@ -94,8 +96,8 @@ class Document(AbstractDocument):
             authorized=True
         )
 
-    def get_page_template(self, page="{page}", size="{size}"):
-        filename = get_page_image_filename(page=page, size=size)
+    def get_page_template(self, **kwargs):
+        filename = get_page_image_filename(**kwargs)
         return self.get_authorized_file_url(filename=filename)
 
     def get_cover_image(self):
@@ -126,6 +128,7 @@ class DocumentCollection(AbstractDocumentCollection):
     team = models.ForeignKey(
         "team.Team", null=True, blank=True, on_delete=models.SET_NULL
     )
+    foirequests = models.ManyToManyField("foirequest.FoiRequest", blank=True)
 
     objects = DocumentCollectionManager()
 
@@ -145,3 +148,12 @@ class DocumentCollection(AbstractDocumentCollection):
         from .api_views import DocumentCollectionSerializer
 
         return DocumentCollectionSerializer
+
+    def update_from_foirequests(self):
+        existing_docs = CollectionDocument.objects.filter(collection=self).values_list(
+            "document_id", flat=True
+        )
+        all_docs = Document.objects.filter(foirequest__in=self.foirequests.all())
+        missing_docs = all_docs.exclude(id__in=existing_docs)
+        for doc in missing_docs:
+            CollectionDocument.objects.create(collection=self, document=doc)

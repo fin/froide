@@ -1,32 +1,36 @@
-from collections import namedtuple
-from datetime import timedelta
 import json
 import re
-
-from django.db import models
-from django.db.models import Q, When, Case, Value
-from django.conf import settings
-from django.utils.translation import gettext_lazy as _
-from django.contrib.sites.models import Site
-from django.contrib.sites.managers import CurrentSiteManager
-from django.urls import reverse
-from django.utils.crypto import get_random_string
+from collections import namedtuple
+from datetime import timedelta
+from typing import TYPE_CHECKING, Optional
 
 import django.dispatch
+from django.conf import settings
+from django.contrib.sites.managers import CurrentSiteManager
+from django.contrib.sites.models import Site
+from django.db import models
+from django.db.models import Q
+from django.urls import reverse
 from django.utils import timezone
+from django.utils.crypto import get_random_string
+from django.utils.translation import gettext_lazy as _
 
 from taggit.managers import TaggableManager
+from taggit.managers import _TaggableManager as TaggitTaggableManager
 from taggit.models import TaggedItemBase
 
-from froide.publicbody.models import PublicBody, FoiLaw, Jurisdiction
 from froide.campaign.models import Campaign
-from froide.team.models import Team
+from froide.helper.email_utils import make_address
 from froide.helper.text_utils import redact_plaintext
+from froide.publicbody.models import FoiLaw, Jurisdiction, PublicBody
+from froide.team.models import Team
 
 from .project import FoiProject
 
+if TYPE_CHECKING:
+    from .message import FoiMessage
 
-MODERATOR_CLASSIFICATION_OFFSET = timedelta(days=14)
+MODERATOR_CLASSIFICATION_OFFSET = timedelta(days=31)
 
 
 class FoiRequestManager(CurrentSiteManager):
@@ -74,31 +78,9 @@ class FoiRequestManager(CurrentSiteManager):
             .order_by("last_message")
         )
 
-    def get_dashboard_requests(self, user, query=None):
-        query_kwargs = {}
-        if query is not None:
-            query_kwargs = {"title__icontains": query}
-        now = timezone.now()
-        return (
-            self.get_queryset()
-            .filter(user=user, **query_kwargs)
-            .annotate(
-                is_important=Case(
-                    When(
-                        Q(status=Status.AWAITING_CLASSIFICATION)
-                        | (Q(due_date__lt=now) & Q(status=Status.AWAITING_RESPONSE)),
-                        then=Value(True),
-                    ),
-                    default=Value(False),
-                    output_field=models.BooleanField(),
-                )
-            )
-            .order_by("-is_important", "-last_message")
-        )
-
     def get_throttle_filter(self, qs, user, extra_filters=None):
         qs = qs.filter(user=user)
-        return qs, "first_message"
+        return qs, "created_at"
 
     def delete_private_requests(self, user):
         if not user:
@@ -195,6 +177,20 @@ class TaggedFoiRequest(TaggedItemBase):
     class Meta:
         verbose_name = _("FoI Request Tag")
         verbose_name_plural = _("FoI Request Tags")
+
+
+class InternalTaggableManager(TaggitTaggableManager):
+    INTERNAL_PREFIX = "$"
+
+    def all(self):
+        return [t for t in super().all() if not t.name.startswith(self.INTERNAL_PREFIX)]
+
+    def all_internal(self):
+        return [t for t in super().all() if t.name.startswith(self.INTERNAL_PREFIX)]
+
+    def add_internal(self, tag):
+        assert tag.startswith(self.INTERNAL_PREFIX)
+        return self.add(tag)
 
 
 class Status(models.TextChoices):
@@ -328,9 +324,7 @@ class FoiRequest(models.Model):
         Team, null=True, blank=True, on_delete=models.SET_NULL, verbose_name=_("Team")
     )
 
-    first_message = models.DateTimeField(
-        _("Date of first message"), blank=True, null=True
-    )
+    created_at = models.DateTimeField(_("Created at"), blank=True, null=True)
     last_message = models.DateTimeField(
         _("Date of last message"), blank=True, null=True
     )
@@ -376,6 +370,8 @@ class FoiRequest(models.Model):
     not_publishable = models.BooleanField(_("Not publishable"), default=False)
     is_foi = models.BooleanField(_("is FoI request"), default=True)
     closed = models.BooleanField(_("is closed"), default=False)
+    no_index = models.BooleanField(_("Disable search machine indexing"), default=False)
+    banner = models.TextField(_("Show extra info on request page"), blank=True)
 
     campaign = models.ForeignKey(
         Campaign,
@@ -406,7 +402,9 @@ class FoiRequest(models.Model):
     objects = FoiRequestManager()
     published = PublishedFoiRequestManager()
     published_not_foi = PublishedNotFoiRequestManager()
-    tags = TaggableManager(through=TaggedFoiRequest, blank=True)
+    tags = TaggableManager(
+        through=TaggedFoiRequest, blank=True, manager=InternalTaggableManager
+    )
 
     class Meta:
         ordering = ("-last_message",)
@@ -452,6 +450,10 @@ class FoiRequest(models.Model):
         if not hasattr(self, "_messages") or self._messages is None:
             self.get_messages()
         return self._messages
+
+    @property
+    def ident(self):
+        return "[#{}]".format(self.id)
 
     def get_messages(self, with_tags=False):
         qs = self.foimessage_set.select_related(
@@ -502,6 +504,8 @@ class FoiRequest(models.Model):
 
     @property
     def status_representation(self):
+        if self.status == Status.ASLEEP:
+            return self.status
         if self.due_date is not None:
             if self.is_overdue():
                 return FilterStatus.OVERDUE
@@ -551,6 +555,12 @@ class FoiRequest(models.Model):
             self.save()
         return self.secret
 
+    def get_sender_address(self):
+        return make_address(
+            self.secret_address,
+            "{} [#{}]".format(self.user.get_full_name(), self.id),
+        )
+
     def get_auth_link(self):
         from ..auth import get_foirequest_auth_code
 
@@ -597,7 +607,7 @@ class FoiRequest(models.Model):
 
         user = self.user
         domains = get_foi_mail_domains()
-        email_regexes = [r"[\w\.\-]+@" + x for x in domains]
+        email_regexes = [r"[\w\.\-]+@" + re.escape(x) for x in domains]
         FROIDE_CONFIG = settings.FROIDE_CONFIG
         user_regexes = []
         if user.private:
@@ -608,8 +618,8 @@ class FoiRequest(models.Model):
                 user.last_name,
                 user.first_name,
             ]
-        all_regexes = email_regexes + user_regexes + user.address.splitlines()
-        all_regexes = [re.escape(a) for a in all_regexes]
+        all_regexes = user_regexes + user.address.splitlines()
+        all_regexes = email_regexes + [re.escape(a) for a in all_regexes]
         return json.dumps([a.strip() for a in all_regexes if a.strip()])
 
     def get_description(self):
@@ -693,11 +703,6 @@ class FoiRequest(models.Model):
     def set_awaits_classification(self):
         self.status = Status.AWAITING_CLASSIFICATION
 
-    def follow_count(self):
-        from froide.foirequestfollower.models import FoiRequestFollower
-
-        return FoiRequestFollower.objects.filter(request=self, confirmed=True).count()
-
     def public_date(self):
         if self.due_date:
             return self.due_date + timedelta(
@@ -762,9 +767,6 @@ class FoiRequest(models.Model):
         from ..forms import get_escalation_message_form
 
         return get_escalation_message_form(foirequest=self)
-
-    def quote_last_message(self):
-        return list(self.messages)[-1].get_quoted()
 
     @property
     def readable_status(self):
@@ -858,7 +860,20 @@ class FoiRequest(models.Model):
                 break
         if final is None or mes is None:
             return None
-        return (mes.timestamp - self.first_message).days
+        return (mes.timestamp - self.created_at).days
+
+    @property
+    def first_outgoing_message(self) -> Optional["FoiMessage"]:
+        sent_msg = self.sent_messages()
+        if sent_msg:
+            return sent_msg[0]
+
+    @property
+    def first_message(self):
+        if self.first_outgoing_message:
+            return self.first_outgoing_message.timestamp
+        else:
+            return self.created_at
 
 
 def get_absolute_short_url(pk):

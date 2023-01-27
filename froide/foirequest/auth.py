@@ -1,26 +1,27 @@
 from functools import lru_cache
 from typing import List
 
+from django.conf import settings
 from django.db.models import Q
 from django.http import HttpRequest
-from django.utils.crypto import salted_hmac, constant_time_compare
-from django.utils.translation import override
 from django.urls import reverse
-from django.conf import settings
+from django.utils.crypto import constant_time_compare, salted_hmac
+from django.utils.translation import override
 
 from crossdomainmedia import CrossDomainMediaAuth
 
 from froide.helper.auth import (
-    can_read_object,
-    can_write_object,
     can_manage_object,
     can_moderate_object,
-    has_authenticated_access,
-    get_read_queryset,
+    can_read_object,
+    can_write_object,
     check_permission,
+    get_read_queryset,
+    get_write_queryset,
+    has_authenticated_access,
 )
 
-from .models import FoiRequest, FoiMessage, FoiAttachment, FoiProject
+from .models import FoiAttachment, FoiMessage, FoiProject, FoiRequest
 
 
 def get_read_foirequest_queryset(request: HttpRequest, queryset=None):
@@ -32,6 +33,17 @@ def get_read_foirequest_queryset(request: HttpRequest, queryset=None):
         has_team=True,
         public_q=Q(visibility=FoiRequest.VISIBILITY.VISIBLE_TO_PUBLIC),
         scope="read:request",
+    )
+
+
+def get_write_foirequest_queryset(request: HttpRequest, queryset=None):
+    if queryset is None:
+        queryset = FoiRequest.objects.all()
+    return get_write_queryset(
+        queryset,
+        request,
+        has_team=True,
+        scope="write:request",
     )
 
 
@@ -90,10 +102,10 @@ def can_read_foirequest_authenticated(
     if has_authenticated_access(foirequest, request, verb="read", scope="read:request"):
         return True
 
-    if foirequest.project:
-        return has_authenticated_access(
-            foirequest.project, request, verb="read", scope="read:request"
-        )
+    if foirequest.project and has_authenticated_access(
+        foirequest.project, request, verb="read", scope="read:request"
+    ):
+        return True
 
     if can_moderate_foirequest(foirequest, request):
         if foirequest.is_public() or user.has_perm("foirequest.see_private"):
@@ -141,7 +153,7 @@ def can_moderate_foirequest(foirequest: FoiRequest, request: HttpRequest) -> boo
 def can_moderate_pii_foirequest(foirequest: FoiRequest, request: HttpRequest) -> bool:
     if not can_moderate_foirequest(foirequest, request):
         return False
-    return request.user.has_perm("foirequest.moderate_pii")
+    return is_foirequest_pii_moderator(request)
 
 
 def can_mark_not_foi(foirequest: FoiRequest, request: HttpRequest) -> bool:
@@ -154,6 +166,10 @@ def is_foirequest_moderator(request: HttpRequest) -> bool:
     if not request.user.is_authenticated:
         return False
     return check_permission(FoiRequest, request, "moderate")
+
+
+def is_foirequest_pii_moderator(request: HttpRequest) -> bool:
+    return request.user.has_perm("foirequest.moderate_pii")
 
 
 def can_manage_foirequest(foirequest: FoiRequest, request: HttpRequest) -> bool:
@@ -170,9 +186,10 @@ def can_manage_foiproject(foiproject: FoiProject, request: HttpRequest) -> bool:
 
 
 def can_read_foirequest_anonymous(foirequest: FoiRequest, request: HttpRequest) -> bool:
-    pb_auth = request.session.get("pb_auth")
-    if pb_auth is not None:
-        return check_foirequest_auth_code(foirequest, pb_auth)
+    if hasattr(request, "session"):  # internal API serialization do not have session
+        pb_auth = request.session.get("pb_auth")
+        if pb_auth is not None:
+            return check_foirequest_auth_code(foirequest, pb_auth)
     return False
 
 

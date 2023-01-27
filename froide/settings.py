@@ -1,12 +1,12 @@
 import os
-import sys
 import re
+from pathlib import Path
 
 from django.utils.translation import gettext_lazy as _
 
-from celery.schedules import crontab
-
 from configurations import Configuration, importer, values
+
+from celery.schedules import crontab
 
 importer.install(check_options=True)
 
@@ -47,8 +47,11 @@ class Base(Configuration):
             "leaflet",
             "django_json_widget",
             "django_celery_beat",
+            "mfa",
+            "easy_thumbnails",
             # local
             "froide.foirequest",
+            "froide.follow",
             "froide.foirequestfollower",  # needs to come after foirequest
             "froide.frontpage",
             "froide.georegion",
@@ -64,18 +67,26 @@ class Base(Configuration):
             "froide.guide",
             "froide.comments",
             "froide.campaign",
+            "froide.organization",
             "froide.upload",
             # Semi-external
             "filingcabinet",  # Later in template chain than froide.document
             # API
             "oauth2_provider",
             "rest_framework",
+            "drf_spectacular",
+            "drf_spectacular_sidecar",
         ]
     )
 
     DATABASES = values.DatabaseURLValue("postgis://froide:froide@localhost:5432/froide")
+    DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 
-    CACHES = values.CacheURLValue("dummy://")
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.dummy.DummyCache",
+        }
+    }
 
     CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 
@@ -89,6 +100,14 @@ class Base(Configuration):
     SITE_EMAIL = values.Value("info@froide.example.com")
     SITE_URL = values.Value("http://localhost:8000")
 
+    @property
+    def MFA_DOMAIN(self):
+        return self.SITE_URL.rsplit("/", 1)[1]
+
+    @property
+    def MFA_SITE_TITLE(self):
+        return self.SITE_NAME
+
     SITE_ID = values.IntegerValue(1)
 
     ADMINS = (
@@ -101,17 +120,18 @@ class Base(Configuration):
 
     # ############## PATHS ###############
 
-    PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
+    PROJECT_ROOT = Path(__file__).resolve().parent
+    BASE_DIR = PROJECT_ROOT.parent
 
-    LOCALE_PATHS = [os.path.abspath(os.path.join(PROJECT_ROOT, "..", "locale"))]
+    LOCALE_PATHS = [BASE_DIR / "locale"]
 
     GEOIP_PATH = None
+    GDAL_LIBRARY_PATH = os.environ.get("GDAL_LIBRARY_PATH")
+    GEOS_LIBRARY_PATH = os.environ.get("GEOS_LIBRARY_PATH")
 
     # Absolute filesystem path to the directory that will hold user-uploaded files.
     # Example: "/home/media/media.lawrence.com/media/"
-    MEDIA_ROOT = values.Value(
-        os.path.abspath(os.path.join(PROJECT_ROOT, "..", "files"))
-    )
+    MEDIA_ROOT = values.Value(BASE_DIR / "files")
 
     # URL that handles the media served from MEDIA_ROOT. Make sure to use a
     # trailing slash.
@@ -127,12 +147,21 @@ class Base(Configuration):
     # Don't put anything in this directory yourself; store your static files
     # in apps' "static/" subdirectories and in STATICFILES_DIRS.
     # Example: "/home/media/media.lawrence.com/static/"
-    STATIC_ROOT = values.Value(
-        os.path.abspath(os.path.join(PROJECT_ROOT, "..", "public"))
-    )
+    STATIC_ROOT = values.Value(BASE_DIR / "public")
+
+    FRONTEND_BUILD_DIR = BASE_DIR / "build"
+    FRONTEND_SERVER_URL = "http://localhost:5173/static/"
+
+    @property
+    def FRONTEND_DEBUG(self):
+        return self.DEBUG
 
     # Additional locations of static files
-    STATICFILES_DIRS = (os.path.join(PROJECT_ROOT, "static"),)
+
+    @property
+    def STATICFILES_DIRS(self):
+        return [self.FRONTEND_BUILD_DIR, self.BASE_DIR / "froide" / "static"]
+
     # ########## URLs #################
 
     ROOT_URLCONF = values.Value("froide.urls")
@@ -179,15 +208,15 @@ class Base(Configuration):
     # List of finder classes that know how to find static files in
     # various locations.
     STATICFILES_FINDERS = (
-        "django.contrib.staticfiles.finders.AppDirectoriesFinder",
         "django.contrib.staticfiles.finders.FileSystemFinder",
+        "django.contrib.staticfiles.finders.AppDirectoriesFinder",
     )
 
     TEMPLATES = [
         {
             "BACKEND": "django.template.backends.django.DjangoTemplates",
             "DIRS": [
-                os.path.join(PROJECT_ROOT, "templates"),
+                PROJECT_ROOT / "templates",
             ],
             "OPTIONS": {
                 "debug": values.BooleanValue(DEBUG),
@@ -259,19 +288,17 @@ class Base(Configuration):
     # to load the internationalization machinery.
     USE_I18N = values.BooleanValue(True)
 
-    # If you set this to False, Django will not format dates, numbers and
-    # calendars according to the current locale
-    USE_L10N = values.BooleanValue(True)
-
     DATE_FORMAT = values.Value("d. F Y")
     SHORT_DATE_FORMAT = values.Value("d.m.Y")
     DATE_INPUT_FORMATS = values.TupleValue(("%d.%m.%Y",))
+    DATETIME_FORMAT = values.Value("N j, Y, P")
     SHORT_DATETIME_FORMAT = values.Value("d.m.Y H:i")
     DATETIME_INPUT_FORMATS = values.TupleValue(("%d.%m.%Y %H:%M",))
     TIME_FORMAT = values.Value("H:i")
-    TIME_INPUT_FORMATS = values.TupleValue(("%H:%M",))
+    TIME_INPUT_FORMATS = values.TupleValue(("%H:%M:%S", "%H:%M"))
 
     TAGGIT_CASE_INSENSITIVE = True
+    TAGGIT_STRIP_UNICODE_WHEN_SLUGIFYING = True
 
     HOLIDAYS = [
         (1, 1),  # New Year's Day
@@ -377,9 +404,13 @@ class Base(Configuration):
             "task": "froide.foirequest.tasks.detect_overdue",
             "schedule": crontab(hour=0, minute=0),
         },
-        "update-foirequestfollowers": {
-            "task": "froide.foirequestfollower.tasks.batch_update",
-            "schedule": crontab(hour=0, minute=0),
+        "batch-update-foirequest": {
+            "task": "froide.foirequest.tasks.batch_update_requester_task",
+            "schedule": crontab(hour=0, minute=1),
+        },
+        "batch-update-followers": {
+            "task": "froide.follow.tasks.batch_update",
+            "schedule": crontab(hour=0, minute=1),
         },
         "classification-reminder": {
             "task": "froide.foirequest.tasks.classification_reminder",
@@ -405,7 +436,7 @@ class Base(Configuration):
         "froide.foirequest.tasks.fetch_mail": {"queue": "emailfetch"},
         "froide.foirequest.tasks.process_mail": {"queue": "email"},
         "djcelery_email_send_multiple": {"queue": "emailsend"},
-        "froide.helper.tasks.*": {"queue": "searchindex"},
+        "froide.helper.tasks.search_*": {"queue": "searchindex"},
         "froide.foirequest.tasks.redact_attachment_task": {"queue": "redact"},
         "froide.foirequest.tasks.ocr_pdf_task": {"queue": "ocr"},
         "filingcabinet.tasks.*": {"queue": "document"},
@@ -472,6 +503,7 @@ class Base(Configuration):
             "froide.helper.api_renderers.CustomPaginatedCSVRenderer",
             "rest_framework.renderers.BrowsableAPIRenderer",
         ),
+        "DEFAULT_SCHEMA_CLASSES": ("drf_spectacular.openapi.AutoSchema",),
     }
 
     # ######### Froide settings ########
@@ -496,6 +528,7 @@ class Base(Configuration):
         delivery_receipt=False,
         dsn=False,
         target_countries=None,
+        suspicious_asn_provider_list=None,
         delivery_reporter=None,
         request_throttle=None,  # Set to [(15, 7 * 24 * 60 * 60),] for 15 requests in 7 days
         message_throttle=[
@@ -512,6 +545,29 @@ class Base(Configuration):
             "about": "/about/",
             "help": "/help/",
         },
+        moderation_triggers=[
+            {
+                "name": "nonfoi",
+                "label": _("Non-FOI"),
+                "icon": "fa-ban",
+                "applied_if_actions_applied": [0],
+                "actions": [
+                    ("froide.foirequest.moderation.MarkNonFOI",),
+                    (
+                        "froide.foirequest.moderation.SendUserEmail",
+                        "foirequest/emails/non_foi",
+                    ),
+                ],
+            },
+            {
+                "name": "depublish",
+                "label": _("Give warning"),
+                "icon": "fa-minus-circle",
+                "actions": [
+                    ("froide.foirequest.moderation.Depublish",),
+                ],
+            },
+        ],
         message_handlers={
             "email": "froide.foirequest.message_handlers.EmailMessageHandler"
         },
@@ -525,9 +581,17 @@ class Base(Configuration):
         auto_reply_subject_regex=rec("^(Auto-?Reply|Out of office)"),
         auto_reply_email_regex=rec("^auto(reply|responder)@"),
         hide_content_funcs=[],
+        non_meaningful_subject_regex=[
+            r"^(foi[- ])?request$",
+            r"^documents?$",
+            r"^information$",
+        ],
+        address_regex=None,
     )
 
     TESSERACT_DATA_PATH = values.Value("/usr/local/share/tessdata")
+    # allow override of settings.LANGUAGE_CODE for Tesseract
+    TESSERACT_LANGUAGE = None
 
     # ###### Email ##############
 
@@ -587,6 +651,12 @@ class Base(Configuration):
     UNSUBSCRIBE_EMAIL_ACCOUNT_PASSWORD = values.Value("")
     UNSUBSCRIBE_EMAIL_USE_SSL = values.Value(False)
 
+    SPECTACULAR_SETTINGS = {
+        "SWAGGER_UI_DIST": "SIDECAR",
+        "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+        "REDOC_DIST": "SIDECAR",
+    }
+
 
 class Dev(Base):
     pass
@@ -636,22 +706,25 @@ class TestBase(Base):
 
     @property
     def MEDIA_ROOT(self):
-        return os.path.abspath(os.path.join(super().PROJECT_ROOT, "tests", "testdata"))
+        return super().PROJECT_ROOT / "tests" / "testdata"
 
     ALLOWED_HOSTS = ("localhost", "testserver")
 
     ELASTICSEARCH_INDEX_PREFIX = "froide_test"
 
     MESSAGE_STORAGE = "django.contrib.messages.storage.cookie.CookieStorage"
-    CACHES = values.CacheURLValue("locmem://")
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "unique-snowflake",
+        }
+    }
 
     TEST_SELENIUM_DRIVER = values.Value("chrome_headless")
 
     SECRET_URLS = values.DictValue(
         {
             "admin": "admin",
-            "postmark_inbound": "postmark_inbound",
-            "postmark_bounce": "postmark_bounce",
         }
     )
 
@@ -685,10 +758,23 @@ class German(object):
     DATE_FORMAT = "d. F Y"
     SHORT_DATE_FORMAT = "d.m.Y"
     DATE_INPUT_FORMATS = ("%d.%m.%Y",)
+    DATETIME_FORMAT = "j. F Y, H:i"
     SHORT_DATETIME_FORMAT = "d.m.Y H:i"
     DATETIME_INPUT_FORMATS = ("%d.%m.%Y %H:%M",)
     TIME_FORMAT = "H:i"
-    TIME_INPUT_FORMATS = ("%H:%M",)
+    TIME_INPUT_FORMATS = (
+        "%H:%M:%S",
+        "%H:%M",
+    )
+    SLUGIFY_REPLACEMENTS = (
+        ("Ä", "Ae"),
+        ("ä", "ae"),
+        ("Ö", "Oe"),
+        ("ö", "oe"),
+        ("Ü", "Ue"),
+        ("ü", "ue"),
+        ("ß", "ss"),
+    )
 
     # Holidays Germany
     HOLIDAYS = [
@@ -757,82 +843,8 @@ class SSLSite(object):
     LANGUAGE_COOKIE_SECURE = True
 
 
-class AmazonS3(object):
-    STATICFILES_STORAGE = values.Value("storages.backends.s3boto.S3BotoStorage")
-
-    STATIC_URL = values.Value("/static/")
-
-    DEFAULT_FILE_STORAGE = values.Value("storages.backends.s3boto.S3BotoStorage")
-
-    AWS_ACCESS_KEY_ID = values.Value("")
-    AWS_SECRET_ACCESS_KEY = values.Value("")
-    AWS_STORAGE_BUCKET_NAME = values.Value("")
-    AWS_S3_SECURE_URLS = values.Value(False)
-    AWS_QUERYSTRING_AUTH = values.Value(False)
-
-
-class Heroku(Production):
-    ALLOWED_HOSTS = ["*"]
-    SECRET_KEY = values.SecretValue()
-
-    CELERY_TASK_ALWAYS_EAGER = values.BooleanValue(True)
-    CELERY_BROKER_URL = values.Value("amqp://")
-
-    @property
-    def LOGGING(self):
-        logging = super().LOGGING
-        logging["handlers"]["console"]["stream"] = sys.stdout
-        logging["loggers"]["django.request"]["handlers"] = ["console"]
-        return logging
-
-
 def os_env(name):
     return os.environ.get(name)
-
-
-class HerokuPostmark(Heroku):
-    SECRET_URLS = values.DictValue(
-        {
-            "admin": "admin",
-            "postmark_inbound": "postmark_inbound",
-            "postmark_bounce": "postmark_bounce",
-        }
-    )
-
-    FOI_EMAIL_TEMPLATE = values.Value("request+{secret}@{domain}")
-    FOI_EMAIL_DOMAIN = values.Value("inbound.postmarkapp.com")
-
-    SERVER_EMAIL = values.Value(os_env("POSTMARK_INBOUND_ADDRESS"))
-    DEFAULT_FROM_EMAIL = values.Value(os_env("POSTMARK_INBOUND_ADDRESS"))
-
-    # Official Notification Mail goes through
-    # the normal Django SMTP Backend
-    EMAIL_HOST = os_env("POSTMARK_SMTP_SERVER")
-    EMAIL_PORT = values.IntegerValue(2525)
-    EMAIL_HOST_USER = os_env("POSTMARK_API_KEY")
-    EMAIL_HOST_PASSWORD = os_env("POSTMARK_API_KEY")
-    EMAIL_USE_TLS = values.BooleanValue(True)
-
-    # SMTP settings for sending FoI mail
-    FOI_EMAIL_FIXED_FROM_ADDRESS = values.BooleanValue(False)
-    FOI_EMAIL_HOST_FROM = os_env("POSTMARK_INBOUND_ADDRESS")
-    FOI_EMAIL_HOST_USER = os_env("POSTMARK_API_KEY")
-    FOI_EMAIL_HOST_PASSWORD = os_env("POSTMARK_API_KEY")
-    FOI_EMAIL_HOST = os_env("POSTMARK_SMTP_SERVER")
-    FOI_EMAIL_PORT = values.IntegerValue(2525)
-    FOI_EMAIL_USE_TLS = values.BooleanValue(True)
-
-
-class HerokuPostmarkS3(AmazonS3, HerokuPostmark):
-    pass
-
-
-class HerokuSSL(SSLSite, Heroku):
-    pass
-
-
-class HerokuSSLPostmark(SSLSite, HerokuPostmark):
-    pass
 
 
 try:

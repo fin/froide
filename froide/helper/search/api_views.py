@@ -1,6 +1,5 @@
-from elasticsearch_dsl.query import Q as ESQ
-
 from django_filters import rest_framework as filters
+from elasticsearch_dsl.query import Q as ESQ
 
 from froide.team.models import Team
 
@@ -33,6 +32,8 @@ class ESQueryMixin:
             self.sqs.sqs = self.sqs.sqs.highlight("content")
             self.sqs.sqs = self.sqs.sqs.sort("_score")
 
+        self.override_sqs()
+
         paginator = ElasticLimitOffsetPagination()
         paginator.paginate_queryset(self.sqs, self.request, view=self)
 
@@ -43,6 +44,9 @@ class ESQueryMixin:
         data = serializer.data
 
         return paginator.get_paginated_response(data)
+
+    def override_sqs(self):
+        pass
 
     def get_searchqueryset(self):
         sqs = self.search_document.search()

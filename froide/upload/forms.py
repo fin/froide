@@ -5,6 +5,9 @@ from django.conf import settings
 from django.urls import reverse
 from django.utils.translation import gettext as _
 
+from froide.helper.templatetags.frontendbuild import get_frontend_files
+from froide.helper.widgets import JSModulePath
+
 
 def get_uppy_i18n():
     return {
@@ -19,6 +22,8 @@ def get_uppy_i18n():
         # 'authenticateWithTitle': _('Please authenticate with %{pluginName} to select files'),
         "back": _("Back"),
         "browse": _("browse"),
+        "browseFiles": _("browse files"),
+        "browseFolders": _("browse folders"),
         "cancel": _("Cancel"),
         "cancelUpload": _("Cancel upload"),
         "chooseFiles": _("Choose files"),
@@ -37,6 +42,7 @@ def get_uppy_i18n():
         "dropHereOr": _("Drop files here or %{browse}"),
         "dropHint": _("Drop your files here"),
         "dropPaste": _("Drop files here, paste or %{browse}"),
+        "dropPasteFiles": _("Drop files here or %{browse}"),
         "dropPasteImport": _("Drop files here, paste, %{browse} or import from"),
         "edit": _("Edit"),
         "editFile": _("Edit file"),
@@ -138,13 +144,17 @@ class FileUploader(forms.widgets.Input):
     input_type = "text"
     template_name = "upload/widgets/file_uploader.html"
 
-    class Media:
-        extend = False
-        js = ("js/fileuploader.js",)
-
     def __init__(self, allowed_file_types=None, *args, **kwargs):
         self.allowed_file_types = allowed_file_types
         super().__init__(*args, **kwargs)
+
+    @property
+    def media(self):
+        build_info = get_frontend_files("fileuploader.js")
+        return forms.Media(
+            css={"all": build_info["css"]},
+            js=[JSModulePath(src) for src in build_info["js"]],
+        )
 
     def value_from_datadict(self, data, files, name):
         return data.getlist(name)

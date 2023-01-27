@@ -1,15 +1,13 @@
 from django_elasticsearch_dsl import Document, fields
 from django_elasticsearch_dsl.registries import registry
+from filingcabinet.models import CollectionDirectory, CollectionDocument, Page
 
 from froide.helper.search import (
     get_index,
-    get_text_analyzer,
     get_search_analyzer,
     get_search_quote_analyzer,
+    get_text_analyzer,
 )
-
-from filingcabinet.models import Page
-
 
 index = get_index("documentpage")
 analyzer = get_text_analyzer()
@@ -33,6 +31,7 @@ class PageDocument(Document):
     foirequest = fields.IntegerField(attr="document.foirequest_id")
     campaign = fields.IntegerField(attr="document.foirequest.campaign_id")
     collections = fields.IntegerField()
+    directories = fields.IntegerField()
     portal = fields.IntegerField(attr="document_portal_id")
     data = fields.ObjectField()
 
@@ -99,6 +98,20 @@ class PageDocument(Document):
     def prepare_collections(self, obj):
         collections = obj.document.document_documentcollection.all()
         return list(collections.values_list("id", flat=True))
+
+    def prepare_directories(self, obj):
+        return list(self._get_ancestor_directories(obj))
+
+    def _get_ancestor_directories(self, obj):
+        directory_ids = (
+            CollectionDocument.objects.filter(document=obj.document)
+            .exclude(directory=None)
+            .values_list("directory_id", flat=True)
+        )
+        directories = CollectionDirectory.objects.filter(id__in=directory_ids)
+        for directory in directories:
+            yield directory.id
+            yield from [d.id for d in directory.get_ancestors()]
 
     def prepare_portal(self, obj):
         if obj.document.portal_id:

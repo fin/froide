@@ -3,18 +3,15 @@ import re
 
 from django.contrib.gis.geos import Point
 
-from rest_framework import serializers
-from rest_framework import viewsets
-from rest_framework.settings import api_settings
-
-from rest_framework_jsonp.renderers import JSONPRenderer
-
 from django_filters import rest_framework as filters
+from rest_framework import serializers, viewsets
+from rest_framework.decorators import action
+from rest_framework.settings import api_settings
+from rest_framework_jsonp.renderers import JSONPRenderer
 
 from froide.helper.api_utils import OpenRefineReconciliationMixin
 
 from .models import GeoRegion
-
 
 GERMAN_PLZ_RE = re.compile(r"\d{5}")
 
@@ -86,6 +83,7 @@ class GeoRegionFilter(filters.FilterSet):
     )
     latlng = filters.CharFilter(method="latlng_filter")
     name = filters.CharFilter(method="name_filter")
+    region_identifier = filters.CharFilter(method="region_identifier_filter")
 
     class Meta:
         model = GeoRegion
@@ -101,18 +99,24 @@ class GeoRegionFilter(filters.FilterSet):
         return queryset.filter(name__icontains=value)
 
     def kind_filter(self, queryset, name, value):
-        return queryset.filter(kind=value)
+        return queryset.filter(kind__in=value.split(","))
 
     def level_filter(self, queryset, name, value):
         return queryset.filter(level=value)
 
     def id_filter(self, queryset, name, value):
         ids = value.split(",")
-        return queryset.filter(pk__in=ids)
+        try:
+            return queryset.filter(pk__in=ids)
+        except ValueError:
+            return queryset
 
     def ancestor_filter(self, queryset, name, value):
         descendants = value.get_descendants()
         return queryset.filter(id__in=descendants)
+
+    def region_identifier_filter(self, queryset, name, value):
+        return queryset.filter(region_identifier=value)
 
     def latlng_filter(self, queryset, name, value):
         try:
@@ -199,3 +203,22 @@ class GeoRegionViewSet(OpenRefineReconciliationMixin, viewsets.ReadOnlyModelView
                 "score": 4,
                 "match": True,  # FIXME: this is quite arbitrary
             }
+
+    @action(
+        detail=False, methods=["get"], url_path="autocomplete", url_name="autocomplete"
+    )
+    def autocomplete(self, request):
+        page = self.paginate_queryset(
+            self.filter_queryset(self.get_queryset())
+            .only("id", "name", "kind", "kind_detail", "region_identifier")
+            .order_by("level", "name")
+        )
+        return self.get_paginated_response(
+            [
+                {
+                    "value": x.pk,
+                    "label": str(x),
+                }
+                for x in page
+            ]
+        )

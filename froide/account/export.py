@@ -1,22 +1,23 @@
-from datetime import timedelta
 import json
 import os
 import tempfile
 import zipfile
+from datetime import timedelta
 
-from django.core.files.storage import default_storage
-from django.utils.translation import override, gettext_lazy as _
 from django.conf import settings
-from django.utils import timezone
+from django.core.files.storage import default_storage
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
+from django.utils.translation import override
 
 from crossdomainmedia import CrossDomainMediaAuth
 
-from froide.helper.api_utils import get_dict
+from froide.helper.csv_utils import get_dict
 
-from .utils import send_mail_user
 from .tasks import start_export_task
+from .utils import send_mail_user
 
 PURPOSE = "dataexport"
 EXPORT_MEDIA_PREFIX = "export"
@@ -93,13 +94,16 @@ def delete_all_expired_exports():
     from froide.accesstoken.models import AccessToken
 
     old_export_date = timezone.now() - EXPORT_MAX_AGE
-    access_tokens = AccessToken.objects.filter(
-        purpose=PURPOSE, timestamp__lte=old_export_date
-    )
-    for at in access_tokens:
-        delete_export(at.token)
 
-    access_tokens.delete()
+    AccessToken.objects.filter(purpose=PURPOSE, timestamp__lte=old_export_date).delete()
+
+    _, files = default_storage.listdir(EXPORT_MEDIA_PREFIX)
+    for filename in files:
+        token = filename.replace(".zip", "")
+        if not AccessToken.objects.filter(
+            purpose=PURPOSE, timestamp__gt=old_export_date, token=token
+        ).exists():
+            delete_export(token)
 
 
 def create_export(user, notification_user=None):
@@ -184,8 +188,13 @@ def export_user_data(user):
             "date_joined",
             "is_staff",
             "profile_text",
-            ("profile_photo", lambda x: os.path.basename(x.path) if x else None),
-            ("tags", lambda x: ",".join(str(t) for t in x.all())),
+            (
+                "profile_photo",
+                lambda x: os.path.basename(x.profile_photo.path)
+                if x.profile_photo
+                else None,
+            ),
+            ("tags", lambda x: ",".join(str(t) for t in x.tags.all())),
             "is_trusted",
             "is_blocked",
             "date_deactivated",
@@ -226,66 +235,67 @@ def export_user_data(user):
     refreshtokens = user.oauth2_provider_refreshtoken.all().select_related(
         "application"
     )
-    yield (
-        "oauth.json",
-        json.dumps(
-            {
-                "grants": [
-                    get_dict(
-                        g,
-                        (
-                            "id",
-                            "code",
-                            "application_id",
-                            "application__name",
-                            "application__description",
-                            "expires",
-                            "redirect_uri",
-                            "scope",
-                            "created",
-                            "updated",
-                        ),
-                    )
-                    for g in grants
-                ],
-                "accesstokens": [
-                    get_dict(
-                        a,
-                        (
-                            "id",
-                            "source_refresh_token_id",
-                            "token",
-                            "application_id",
-                            "application__name",
-                            "application__description",
-                            "expires",
-                            "scope",
-                            "created",
-                            "updated",
-                        ),
-                    )
-                    for a in accesstokens
-                ],
-                "refreshtokens": [
-                    get_dict(
-                        a,
-                        (
-                            "id",
-                            "token",
-                            "application_id",
-                            "application__name",
-                            "application__description",
-                            "access_token_id",
-                            "created",
-                            "updated",
-                            "revoked",
-                        ),
-                    )
-                    for a in refreshtokens
-                ],
-            }
-        ).encode("utf-8"),
-    )
+    if grants or accesstokens or refreshtokens:
+        yield (
+            "oauth.json",
+            json.dumps(
+                {
+                    "grants": [
+                        get_dict(
+                            g,
+                            (
+                                "id",
+                                "code",
+                                "application_id",
+                                "application__name",
+                                "application__description",
+                                "expires",
+                                "redirect_uri",
+                                "scope",
+                                "created",
+                                "updated",
+                            ),
+                        )
+                        for g in grants
+                    ],
+                    "accesstokens": [
+                        get_dict(
+                            a,
+                            (
+                                "id",
+                                "source_refresh_token_id",
+                                "token",
+                                "application_id",
+                                "application__name",
+                                "application__description",
+                                "expires",
+                                "scope",
+                                "created",
+                                "updated",
+                            ),
+                        )
+                        for a in accesstokens
+                    ],
+                    "refreshtokens": [
+                        get_dict(
+                            a,
+                            (
+                                "id",
+                                "token",
+                                "application_id",
+                                "application__name",
+                                "application__description",
+                                "access_token_id",
+                                "created",
+                                "updated",
+                                "revoked",
+                            ),
+                        )
+                        for a in refreshtokens
+                    ],
+                }
+            ).encode("utf-8"),
+        )
 
 
 class ExportCrossDomainMediaAuth(CrossDomainMediaAuth):
@@ -305,6 +315,8 @@ class ExportCrossDomainMediaAuth(CrossDomainMediaAuth):
         return False
 
     def has_perm(self, request):
+        if request.user.is_superuser:
+            return True
         ctx = self.context
         obj = ctx["object"]
         return obj.user == request.user

@@ -1,12 +1,23 @@
+from typing import List, Optional
+
 from django.db.models import signals
 from django.dispatch import receiver
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from froide.helper.email_sending import mail_registry
+from froide.helper.signals import email_left_queue
 
-from .models import FoiRequest, FoiMessage, FoiAttachment, FoiEvent, FoiProject
+from .models import (
+    DeliveryStatus,
+    FoiAttachment,
+    FoiEvent,
+    FoiMessage,
+    FoiProject,
+    FoiRequest,
+)
+from .models.message import MESSAGE_ID_PREFIX
 from .utils import send_request_user_email, short_request_url
-
 
 became_overdue_email = mail_registry.register(
     "foirequest/emails/became_overdue",
@@ -192,11 +203,15 @@ def send_foimessage_sent_confirmation(sender, message=None, **kwargs):
         # All non-email sent messages are not interesting to users.
         # Don't inform them about it.
         return
+    if kwargs.get("bulk"):
+        # Don't notify on bulk message sending
+        return
 
     messages = sender.get_messages()
     start_thread = False
     if len(messages) == 1:
         if sender.project_id is not None:
+            # Don't notify on first message in a project
             return
         subject = _("Your Freedom of Information Request was sent")
         mail_intent = confirm_foi_request_sent_email
@@ -318,12 +333,12 @@ def create_event_message_received(sender, message=None, user=None, **kwargs):
 
 
 @receiver(
-    FoiAttachment.attachment_published,
+    FoiAttachment.attachment_approved,
     dispatch_uid="create_event_followers_attachments_approved",
 )
 def create_event_followers_attachments_approved(sender, user=None, **kwargs):
     FoiEvent.objects.create_event(
-        FoiEvent.EVENTS.ATTACHMENT_PUBLISHED,
+        FoiEvent.EVENTS.ATTACHMENT_APPROVED,
         sender.belongs_to.request,
         user=user,
         attachment_id=sender.id,
@@ -449,3 +464,25 @@ def pre_comment_foimessage(sender=None, comment=None, request=None, **kwargs):
     if user.private and foirequest.user == user:
         comment.user_name = str(_("requester"))
     return True
+
+
+@receiver(email_left_queue)
+def save_delivery_status(
+    message_id: Optional[str], status: str, log: List[str], **kwargs
+):
+    if message_id is None or not message_id.startswith("<{}".format(MESSAGE_ID_PREFIX)):
+        return
+
+    try:
+        message = FoiMessage.objects.filter(email_message_id=message_id).get()
+    except FoiMessage.DoesNotExist:
+        return
+
+    DeliveryStatus.objects.update_or_create(
+        message=message,
+        defaults={
+            "log": "".join(log),
+            "status": status,
+            "last_update": timezone.now(),
+        },
+    )

@@ -1,23 +1,24 @@
 import calendar
 from email.utils import formatdate
+from typing import List, Tuple
 
-from django.db import models
 from django.conf import settings
-from django.utils.translation import gettext_lazy as _
-from django.template.loader import render_to_string
-from django.utils import timezone
-from django.utils.html import format_html
-from django.utils.functional import cached_property
 from django.core.mail import EmailMessage, EmailMultiAlternatives
+from django.db import models
+from django.template.loader import render_to_string
+from django.utils import formats, timezone
+from django.utils.functional import cached_property
+from django.utils.translation import gettext_lazy as _
 
 from taggit.managers import TaggableManager
 from taggit.models import TagBase, TaggedItemBase
 
-from froide.publicbody.models import PublicBody
 from froide.helper.email_utils import make_address
-from froide.helper.text_utils import redact_subject, redact_plaintext
+from froide.helper.text_diff import get_differences
+from froide.helper.text_utils import quote_text, redact_plaintext, redact_subject
+from froide.publicbody.models import PublicBody
 
-from .request import FoiRequest, get_absolute_short_url, get_absolute_domain_short_url
+from .request import FoiRequest, get_absolute_domain_short_url, get_absolute_short_url
 
 BOUNCE_TAG = "bounce"
 HAS_BOUNCED_TAG = "bounced"
@@ -59,6 +60,7 @@ class MessageKind(models.TextChoices):
     UPLOAD = ("upload", _("upload"))
     PHONE = ("phone", _("phone call"))
     VISIT = ("visit", _("visit in person"))
+    IMPORT = ("import", _("automatically imported"))
 
 
 MESSAGE_KIND_ICONS = {
@@ -69,10 +71,16 @@ MESSAGE_KIND_ICONS = {
     MessageKind.UPLOAD: "download",
     MessageKind.PHONE: "phone",
     MessageKind.VISIT: "handshake-o",
+    MessageKind.IMPORT: "cloud-download",
 }
+
+MANUAL_MESSAGE_KINDS = {MessageKind.POST, MessageKind.PHONE, MessageKind.VISIT}
+MESSAGE_ID_PREFIX = "foimsg."
 
 
 class FoiMessage(models.Model):
+    CONTENT_CACHE_THRESHOLD = 5000
+
     request = models.ForeignKey(
         FoiRequest,
         verbose_name=_("Freedom of Information Request"),
@@ -137,6 +145,8 @@ class FoiMessage(models.Model):
     html = models.TextField(_("HTML"), blank=True, null=True)
     content_rendered_auth = models.TextField(blank=True, null=True)
     content_rendered_anon = models.TextField(blank=True, null=True)
+    redacted_content_auth = models.JSONField(blank=True, null=True)
+    redacted_content_anon = models.JSONField(blank=True, null=True)
     redacted = models.BooleanField(_("Was Redacted?"), default=False)
     not_publishable = models.BooleanField(_("Not publishable"), default=False)
     email_headers = models.JSONField(null=True, default=None, blank=True)
@@ -158,6 +168,8 @@ class FoiMessage(models.Model):
         verbose_name = _("Freedom of Information Message")
         verbose_name_plural = _("Freedom of Information Messages")
 
+        indexes = [models.Index(fields=["email_message_id"])]
+
     def __str__(self):
         return _("Message in '%(request)s' at %(time)s") % {
             "request": self.request,
@@ -178,11 +190,11 @@ class FoiMessage(models.Model):
 
     @property
     def can_edit(self):
-        return self.received_by_user
+        return self.kind in MANUAL_MESSAGE_KINDS
 
     @property
     def received_by_user(self):
-        return self.kind not in (MessageKind.EMAIL, MessageKind.UPLOAD)
+        return self.is_response and self.kind in MANUAL_MESSAGE_KINDS
 
     @property
     def kind_icon(self):
@@ -219,7 +231,7 @@ class FoiMessage(models.Model):
 
     @cached_property
     def tag_set(self):
-        return set([t.name for t in self.tags.all()])
+        return set(self.tags.all().values_list("name", flat=True))
 
     @property
     def readable_status(self):
@@ -252,6 +264,28 @@ class FoiMessage(models.Model):
     def get_autologin_url(self):
         return self.get_request_link(self.request.get_autologin_url())
 
+    def get_text_sender(self):
+        if self.is_response:
+            alternative = self.sender_name
+            if self.sender_public_body:
+                alternative = self.sender_public_body.name
+            if self.is_not_email:
+                return _("{name} (via {via})").format(
+                    name=self.sender or alternative, via=self.get_kind_display()
+                )
+            return make_address(self.sender_email, self.sender_name or alternative)
+
+        sender = ""
+        sender_user = self.sender_user or self.request.user
+        if sender_user:
+            sender = sender_user.get_full_name()
+        if self.is_not_email:
+            return _("{name} (via {via})").format(
+                name=sender, via=self.get_kind_display()
+            )
+        email = self.sender_email or self.request.secret_address
+        return make_address(email, sender)
+
     def get_text_recipient(self):
         if not self.is_response:
             alternative = self.recipient
@@ -271,24 +305,32 @@ class FoiMessage(models.Model):
         email = self.recipient_email or self.request.secret_address
         return make_address(email, recipient)
 
-    def get_recipient(self):
-        if self.recipient_public_body:
-            return format_html(
-                '<a href="{url}">{name}</a>',
-                url=self.recipient_public_body.get_absolute_url(),
-                name=self.recipient_public_body.name,
-            )
-        else:
-            return self.recipient
-
     def get_formatted(self, attachments):
         return render_to_string(
             "foirequest/emails/formatted_message.txt",
             {"message": self, "attachments": attachments},
         )
 
-    def get_quoted(self):
-        return "\n".join([">%s" % x for x in self.plaintext.splitlines()])
+    def get_quoted_message(self):
+        header = "\n".join(
+            (
+                "> {label} 	{value}".format(label=_("Subject:"), value=self.subject),
+                "> {label} 	{value}".format(
+                    label=_("Date:"),
+                    value=formats.date_format(self.timestamp, settings.DATETIME_FORMAT),
+                ),
+                "> {label} 	{value}".format(
+                    label=_("From:"), value=self.get_text_sender()
+                ),
+                "> {label} 	{value}".format(
+                    label=_("To:"), value=self.get_text_recipient()
+                ),
+            )
+        )
+        return "{header}\n>\n{text}".format(header=header, text=self.get_quoted_text())
+
+    def get_quoted_text(self):
+        return quote_text(self.plaintext)
 
     def needs_status_input(self):
         return self.request.message_needs_status() == self
@@ -398,14 +440,27 @@ class FoiMessage(models.Model):
             return self.real_sender
 
     def list_additional_recipients(self):
+        from ..utils import get_foi_mail_domains
+
         if not self.email_headers:
             return []
         recipients = []
         fields = ("to", "cc")
+        FOI_EMAIL_DOMAIN = get_foi_mail_domains()[0]
         for field in fields:
-            for recipient in self.email_headers.get(field, []):
-                recipients.append((field, recipient[0], recipient[1]))
+            for name, email in self.email_headers.get(field, []):
+                # Hide other addresses of foi mail domain
+                if email != self.request.secret_address and email.endswith(
+                    "@{}".format(FOI_EMAIL_DOMAIN)
+                ):
+                    recipients.append((field, FOI_EMAIL_DOMAIN, FOI_EMAIL_DOMAIN))
+                else:
+                    recipients.append((field, name, email))
         return recipients
+
+    def get_extra_content_types(self) -> List[str]:
+        prefs = self.email_headers or {}
+        return prefs.get("_extra_content_types", [])
 
     @property
     def attachments(self):
@@ -431,6 +486,8 @@ class FoiMessage(models.Model):
     def clear_render_cache(self):
         self.content_rendered_auth = None
         self.content_rendered_anon = None
+        self.redacted_content_auth = None
+        self.redacted_content_anon = None
 
     def get_content(self):
         self.plaintext = self.plaintext or ""
@@ -483,7 +540,9 @@ class FoiMessage(models.Model):
         assert self.timestamp is not None
         domain = settings.FOI_MAIL_SERVER_HOST
         assert domain and "." in domain
-        return "<foimsg.{}.{}@{}>".format(self.id, self.timestamp.timestamp(), domain)
+        return "<{}{}.{}@{}>".format(
+            MESSAGE_ID_PREFIX, self.id, self.timestamp.timestamp(), domain
+        )
 
     def as_mime_message(self):
         klass = EmailMessage
@@ -535,9 +594,20 @@ class FoiMessage(models.Model):
             data = retrieve_mail_by_message_id(client, self.email_message_id)
         return data
 
+    def fails_authenticity(self):
+        if not self.is_response or not self.is_email:
+            return
+        checks = self.email_headers.get("authenticity")
+        if not checks:
+            return False
+        return any([c["failed"] for c in checks])
+
+    def has_authenticity_info(self):
+        return bool(self.email_headers.get("authenticity"))
+
     def update_email_headers(self, email):
         email_headers = {}
-        if email.to and email.to[0][1] != self.request.secret_address:
+        if email.to and email.to[0].email != self.request.secret_address:
             email_headers["to"] = email.to
         if email.cc:
             email_headers["cc"] = email.cc
@@ -547,6 +617,10 @@ class FoiMessage(models.Model):
             email_headers["resent-to"] = email.resent_to
         if email.resent_cc:
             email_headers["resent-cc"] = email.resent_cc
+
+        email_headers["authenticity"] = [
+            c.to_dict() for c in email.get_authenticity_checks()
+        ]
 
         if email_headers:
             self.email_headers = email_headers
@@ -573,48 +647,6 @@ class FoiMessage(models.Model):
             self._delivery_status = None
         return self._delivery_status
 
-    def check_delivery_status(self, count=None, extended=False):
-        if self.is_not_email or self.is_response:
-            return
-        if not self.sender_email or not self.recipient_email:
-            return
-
-        from froide.foirequest.delivery import get_delivery_report
-        from ..tasks import check_delivery_status
-
-        report = get_delivery_report(
-            self.sender_email, self.recipient_email, self.timestamp, extended=extended
-        )
-        if report is None:
-            if count is None or count > 5:
-                return
-            count += 1
-            check_delivery_status.apply_async(
-                (self.id,), {"count": count}, countdown=5 ** count * 60
-            )
-            return
-
-        if not self.email_message_id and report.message_id:
-            self.email_message_id = report.message_id
-            self.save()
-
-        ds, created = DeliveryStatus.objects.update_or_create(
-            message=self,
-            defaults=dict(
-                log=report.log,
-                status=report.status,
-                last_update=timezone.now(),
-            ),
-        )
-        if count is None or count > 5:
-            return
-
-        count += 1
-        if not ds.is_log_status_final():
-            check_delivery_status.apply_async(
-                (self.id,), {"count": count}, countdown=5 ** count * 60
-            )
-
     def send(self, **kwargs):
         from ..message_handlers import send_message
 
@@ -633,6 +665,43 @@ class FoiMessage(models.Model):
             kwargs["attachments"] = list(att_gen)
 
         resend_message(self, **kwargs)
+
+    def get_redacted_content(self, auth: bool) -> List[Tuple[bool, str]]:
+        if auth:
+            show, hide, cache_field = (
+                self.plaintext,
+                self.plaintext_redacted,
+                "redacted_content_auth",
+            )
+        else:
+            show, hide, cache_field = (
+                self.plaintext_redacted,
+                self.plaintext,
+                "redacted_content_anon",
+            )
+
+        if getattr(self, cache_field) is None:
+            redacted_content = [list(x) for x in get_differences(show, hide)]
+            setattr(self, cache_field, redacted_content)
+            FoiMessage.objects.filter(id=self.id).update(
+                **{cache_field: redacted_content}
+            )
+        return getattr(self, cache_field)
+
+    def get_cached_rendered_content(self, authenticated_read):
+        if authenticated_read:
+            return self.content_rendered_auth
+        else:
+            return self.content_rendered_anon
+
+    def set_cached_rendered_content(self, authenticated_read, content):
+        needs_caching = len(self.content) > self.CONTENT_CACHE_THRESHOLD
+        if needs_caching:
+            if authenticated_read:
+                update = {"content_rendered_auth": content}
+            else:
+                update = {"content_rendered_anon": content}
+            FoiMessage.objects.filter(id=self.id).update(**update)
 
 
 class Delivery(models.TextChoices):

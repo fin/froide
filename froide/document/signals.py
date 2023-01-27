@@ -2,6 +2,8 @@ from django.db import transaction
 from django.db.models import signals
 from django.dispatch import receiver
 
+from filingcabinet.models import CollectionDocument
+
 from froide.foirequest.models import FoiAttachment
 
 from .models import Document
@@ -18,33 +20,36 @@ def document_created(instance=None, created=False, **kwargs):
 
 
 @receiver(
-    signals.post_save,
-    sender=FoiAttachment,
-    dispatch_uid="reprocess_attachment_redaction",
+    FoiAttachment.attachment_approved, dispatch_uid="was_redacted_reprocess_document"
 )
-def reprocess_attachment_redaction(instance, created=False, **kwargs):
-    if created and kwargs.get("raw", False):
+def reprocess_document_after_redaction(sender: FoiAttachment, **kwargs):
+    if sender.document and kwargs.get("redacted"):
+        # Recreate pages after redaction
+        sender.document.process_document(reprocess=True)
         return
-    if not instance.document_id:
+    unredacteds = sender.unredacted_set.all()
+    if not unredacteds:
         return
-    if not instance.redacted_id:
-        return
-    # If attachment has document, but also redacted version
-    # move document reference to redacted version
-    with transaction.atomic():
-        doc_id = instance.document_id
-        Document.objects.filter(id=doc_id).update(original_id=instance.redacted_id)
-        instance.document = None
-        instance.save()
-        FoiAttachment.objects.filter(id=instance.redacted_id).update(document_id=doc_id)
-
-    d = Document.objects.get(id=doc_id)
-    d.process_document()
+    assert len(unredacteds) == 1
+    original = unredacteds[0]
+    doc_id = original.document_id
+    if doc_id:
+        # Original has a document
+        # Move references to redacted version (=sender)
+        with transaction.atomic():
+            Document.objects.filter(id=doc_id).update(original_id=sender.id)
+            original.document = None
+            original.save(update_fields=["document"])
+            FoiAttachment.objects.filter(id=sender.id).update(document_id=doc_id)
+        # Then reprocess document
+        document = Document.objects.get(id=doc_id)
+        document.process_document(reprocess=True)
 
 
 @receiver(
-    FoiAttachment.attachment_redacted, dispatch_uid="was_redacted_reprocess_document"
+    signals.post_delete,
+    sender=CollectionDocument,
+    dispatch_uid="reindex_document_removed_from_collection",
 )
-def reprocess_document_after_redaction(sender, **kwargs):
-    if sender.document:
-        sender.document.process_document()
+def reindex_document_removed_from_collection(instance: CollectionDocument, **kwargs):
+    update_document_index(instance.document)

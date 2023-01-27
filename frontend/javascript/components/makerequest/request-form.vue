@@ -4,46 +4,35 @@
 
     <div
       v-if="multiRequest && canBatchRequest"
-      class="publicbody-summary-container"
-    >
+      class="publicbody-summary-container">
       <div class="publicbody-summary">
         <p>
           <template v-if="publicBodies.length < 20">
             <ul>
-              <li
-                v-for="pb in publicBodies"
-                :key="pb.id"
-              >
+              <li v-for="pb in publicBodies" :key="pb.id">
                 {{ pb.name }}
               </li>
             </ul>
           </template>
           <template v-else>
-            {{ i18n._('toMultiPublicBodies', {count: publicBodies.length}) }}
+            {{ i18n._('toMultiPublicBodies', { count: publicBodies.length }) }}
           </template>
           <span v-if="!hidePublicbodyChooser">
             <a
-              class="pb-change-link badge badge-pill badge-primary ml-3"
+              class="pb-change-link badge rounded-pill text-bg-primary ms-3"
               :href="config.url.makeRequest"
-              @click.prevent="$emit('setStepSelectPublicBody')"
-            >
+              @click.prevent="$emit('setStepSelectPublicBody')">
               {{ i18n.change }}
             </a>
           </span>
         </p>
       </div>
     </div>
-    <div
-      v-if="multiRequest && !canBatchRequest"
-      class="mb-5 mt-5"
-    >
-      <p>{{ i18n._('toMultiPublicBodies', {count: publicBodies.length}) }}</p>
+    <div v-if="multiRequest && !canBatchRequest" class="mb-5 mt-5">
+      <p>{{ i18n._('toMultiPublicBodies', { count: publicBodies.length }) }}</p>
       <div class="publicbody-summary-list">
         <ul>
-          <li
-            v-for="pb in publicBodies"
-            :key="pb.id"
-          >
+          <li v-for="pb in publicBodies" :key="pb.id">
             {{ pb.name }}
           </li>
         </ul>
@@ -51,46 +40,33 @@
       <small>{{ i18n.batchRequestDraftOnly }}</small>
     </div>
 
-    <div
-      v-if="!multiRequest"
-      class="publicbody-summary-container"
-    >
+    <div v-if="!multiRequest" class="publicbody-summary-container">
       <div class="row">
         <div class="col-lg-12 publicbody-summary">
           <p>
-            {{ i18n._('toPublicBody', {name: publicBody.name}) }}
+            {{ i18n._('toPublicBody', { name: publicBody.name }) }}
+            <a :href="publicBody.site_url" target="_blank">
+              <span class="fa fa-info-circle" />
+            </a>
             <span v-if="!hidePublicbodyChooser">
               <a
-                class="pb-change-link badge badge-pill badge-primary ml-3"
+                class="pb-change-link badge rounded-pill text-bg-primary ms-3"
                 :href="config.url.makeRequest"
-                @click.prevent="$emit('setStepSelectPublicBody')"
-              >
+                @click.prevent="$emit('setStepSelectPublicBody')">
                 {{ i18n.change }}
               </a>
             </span>
           </p>
         </div>
       </div>
-      <div
-        v-if="hasLawNotes"
-        class="row"
-      >
+      <div v-if="hasLawNotes" class="row">
         <div class="col-lg-8">
-          <div
-            class="alert alert-warning"
-            v-html="lawNotes"
-          />
+          <div class="alert alert-warning" v-html="lawNotes" />
         </div>
       </div>
-      <div
-        v-if="hasPublicBodyNotes"
-        class="row"
-      >
+      <div v-if="hasPublicBodyNotes" class="row">
         <div class="col-lg-8">
-          <div
-            class="alert alert-warning"
-            v-html="publicBodyNotes"
-          />
+          <div class="alert alert-warning" v-html="publicBodyNotes" />
         </div>
       </div>
     </div>
@@ -100,63 +76,49 @@
       :key="pb.id"
       type="hidden"
       name="publicbody"
-      :value="pb.id"
-    >
-    <input
-      type="hidden"
-      name="law_type"
-      :value="lawType"
-    >
+      :value="pb.id" />
+    <input type="hidden" name="law_type" :value="lawType" />
 
     <div class="row">
       <div class="col-md-12">
-        <div
-          v-if="nonFieldErrors.length > 0"
-          class="alert alert-danger"
-        >
-          <p
-            v-for="error in nonFieldErrors"
-            :key="error"
-          >
+        <div v-if="nonFieldErrors.length > 0" class="alert alert-danger">
+          <p v-for="error in nonFieldErrors" :key="error">
             {{ error }}
           </p>
         </div>
 
-        <div class="form-group">
+        <div class="mb-3">
           <label
+            class="form-check-label"
             for="id_subject"
-            :class="{ 'text-danger': errors.subject }"
-          >
+            :class="{ 'text-danger': errors.subject }">
             {{ i18n.subject }}
           </label>
-          <div v-if="editingDisabled && !(errors.subject && errors.subject.length > 0)">
-            <input
-              type="hidden"
-              name="subject"
-              :value="subject"
-            >
+          <div
+            v-if="
+              editingDisabled && !(errors.subject && errors.subject.length > 0)
+            ">
+            <input type="hidden" name="subject" :value="subject" />
             <strong>{{ subject }}</strong>
             <button
-              class="btn btn-sm btn-white pull-right"
-              @click.prevent="editingDisabled = false"
-            >
+              class="btn btn-sm btn-white float-end"
+              @click.prevent="editingDisabled = false">
               <small class="d-none d-md-block">{{ i18n.reviewEdit }}</small>
               <small class="d-md-none fa fa-edit">
-                <span class="sr-only">{{ i18n.reviewEdit }}</span>
+                <span class="visually-hidden">{{ i18n.reviewEdit }}</span>
               </small>
             </button>
           </div>
           <template v-else>
             <div
               v-if="errors.subject && errors.subject.length > 0"
-              class="alert alert-danger"
-            >
-              <p
-                v-for="error in errors.subject"
-                :key="error.message"
-              >
+              class="alert alert-danger">
+              <p v-for="error in errors.subject" :key="error.message">
                 {{ error.message }}
               </p>
+            </div>
+            <div v-if="!isMeaningfulSubject" class="alert alert-warning">
+              {{ i18n.enterMeaningfulSubject }}
             </div>
             <input
               id="id_subject"
@@ -166,8 +128,7 @@
               class="form-control"
               :class="{ 'is-invalid': errors.subject }"
               :placeholder="formFields.subject.placeholder"
-              @keydown.enter.prevent
-            >
+              @keydown.enter.prevent />
           </template>
         </div>
       </div>
@@ -175,19 +136,13 @@
 
     <div class="card mb-3">
       <div class="card-body">
-        <div
-          v-if="fullText && warnFullText"
-          class="alert alert-warning"
-        >
+        <div v-if="fullText && warnFullText" class="alert alert-warning">
           <p>
             {{ i18n.warnFullText }}
           </p>
         </div>
         <div class="row">
-          <div
-            v-if="!editingDisabled"
-            class="col-md-4 order-md-2"
-          >
+          <div v-if="!editingDisabled" class="col-md-4 order-md-2">
             <transition name="saved-full-text">
               <div v-if="savedFullTextBody">
                 <h6>
@@ -196,111 +151,88 @@
                 <textarea
                   v-model="savedFullTextBody"
                   class="saved-body"
-                  readonly
-                />
+                  readonly />
               </div>
             </transition>
             <slot name="request-hints" />
             <button
               v-if="fullTextDisabled"
               class="btn btn-light btn-sm"
-              @click.prevent="resetFullText"
-            >
+              @click.prevent="resetFullText">
               {{ i18n.resetFullText }}
             </button>
           </div>
           <div class="col-md-8 order-1">
             <div
               v-if="errors.body && errors.body.length > 0"
-              class="alert alert-danger"
-            >
-              <p
-                v-for="error in errors.body"
-                :key="error.message"
-              >
+              class="alert alert-danger">
+              <p v-for="error in errors.body" :key="error.message">
                 {{ error.message }}
               </p>
             </div>
-            <!-- The following is whitespace sensitive -->
-            <div
-              v-if="!fullText"
-              class="body-text">{{ letterStart }}</div>
-            <div
-              v-if="editingDisabled"
-              class="body-text body-text-em"
-            >{{ body }}</div>
+            <div v-if="!fullText" class="body-text" v-text="letterStart" />
+            <div v-if="editingDisabled" class="body-text-em" v-text="body" />
             <textarea
               v-show="!editingDisabled"
               id="id_body"
               v-model="body"
               name="body"
               class="form-control body-textarea"
-              :class="{ 'is-invalid': errors.body, 'attention': !hasBody }"
+              :class="{ 'is-invalid': errors.body, attention: !hasBody }"
               :rows="bodyRows"
               :placeholder="formFields.body.placeholder"
-              @keyup="bodyChanged"
-            />
-            <label
+              @keyup="bodyChanged" />
+            <div
               v-if="allowFullText && !editingDisabled"
-              class="small pull-right text-muted"
-            >
+              class="form-check form-check-inline float-end">
               <input
                 id="full_text_checkbox"
+                class="form-check-input"
                 v-model="fullText"
                 type="checkbox"
                 name="full_text_checkbox"
-                :disabled="fullTextDisabled"
-              >
-              <i
-                v-if="warnFullText"
-                class="fa fa-exclamation-triangle"
-                aria-hidden="true"
-              />
-              {{ formFields.full_text.label }}
-            </label>
-            <input
-              v-model="fullText"
-              type="hidden"
-              name="full_text"
-            >
-            <!-- The following is whitespace sensitive -->
-            <div
-              v-if="!fullText"
-              class="body-text"
-            ><template v-if="!fullLetter">
+                :disabled="fullTextDisabled" />
+              <label
+                for="full_text_checkbox"
+                class="form-check-label small text-muted">
+                <i
+                  v-if="warnFullText"
+                  class="fa fa-exclamation-triangle"
+                  aria-hidden="true" />
+                {{ formFields.full_text.label }}
+              </label>
+            </div>
+            <input v-model="fullText" type="hidden" name="full_text" />
+            <div v-if="!fullText" class="body-text">
+              <template v-if="!fullLetter">
                 <a
                   class="show-full-letter"
                   href="#"
                   @click.prevent="showFullLetter"
-                >[&hellip;]</a>
-                {{ letterEndShort }}
-              </template><template v-else>{{ letterEnd }}</template>
+                  v-text="'[…]'" />
+                <template>{{ letterEndShort }}</template>
+              </template>
+              <template v-else>{{ letterEnd }}</template>
             </div>
-            <div
-              v-if="letterSignature"
-              class="body-text"
-            ><em>{{ letterSignature }}</em></div>
+            <div v-if="letterSignature" class="body-text">
+              <em>{{ letterSignature }}</em>
+            </div>
             <div
               v-if="!letterSignature && fullText"
               class="body-text"
-            >{{ letterSignatureName }}</div>
+              v-text="letterSignatureName" />
           </div>
         </div>
-        <div
-          v-if="!hasUser"
-          class="row"
-        >
+        <div v-if="!hasUser" class="row">
           <div class="col-md-8">
-            <div class="form-group row">
+            <div class="mb-3 row">
               <div
                 class="col-sm-6"
-                :class="{ 'text-danger': usererrors.first_name }"
-              >
+                :class="{ 'text-danger': usererrors.first_name }">
                 <label
-                  class="control-label field-required"
+                  class="form-label field-required"
                   for="id_first_name"
-                  :class="{ 'text-danger': usererrors.first_name }"
-                >
+                  :class="{ 'text-danger': usererrors.first_name }">
                   {{ i18n.yourFirstName }}
                 </label>
                 <input
@@ -311,25 +243,19 @@
                   class="form-control"
                   :class="{ 'is-invalid': usererrors.first_name }"
                   :placeholder="userformFields.first_name.placeholder"
-                  required
-                >
-                <p
-                  v-for="e in usererrors.first_name"
-                  :key="e.message"
-                >
+                  required />
+                <p v-for="e in usererrors.first_name" :key="e.message">
                   {{ e.message }}
                 </p>
               </div>
 
               <div
                 class="col-sm-6"
-                :class="{ 'text-danger': usererrors.last_name }"
-              >
+                :class="{ 'text-danger': usererrors.last_name }">
                 <label
-                  class="control-label field-required"
+                  class="form-label field-required"
                   for="id_last_name"
-                  :class="{ 'text-danger': usererrors.last_name }"
-                >
+                  :class="{ 'text-danger': usererrors.last_name }">
                   {{ i18n.yourLastName }}
                 </label>
                 <input
@@ -340,48 +266,35 @@
                   class="form-control"
                   :class="{ 'is-invalid': usererrors.last_name }"
                   :placeholder="userformFields.last_name.placeholder"
-                  required
-                >
-                <p
-                  v-for="e in usererrors.last_name"
-                  :key="e.message"
-                >
+                  required />
+                <p v-for="e in usererrors.last_name" :key="e.message">
                   {{ e.message }}
                 </p>
               </div>
             </div>
           </div>
-          <div
-            v-if="usePseudonym"
-            class="col-md-4 mt-md-4"
-          >
+          <div v-if="usePseudonym" class="col-md-4 mt-md-4">
             <small
               v-if="userformFields.last_name.help_text"
-              v-html="userformFields.last_name.help_text"
-            />
+              v-html="userformFields.last_name.help_text" />
           </div>
         </div>
 
         <div
           v-if="config.settings.user_can_hide_web && !hasUser"
-          class="row mt-2"
-        >
+          class="row mt-2">
           <div class="col-md-8">
-            <div class="checkbox">
-              <label>
-                <input
-                  id="id_private"
-                  v-model="userPrivate"
-                  type="checkbox"
-                  name="private"
-                >
+            <div class="form-check">
+              <input
+                id="id_private"
+                class="form-check-input"
+                v-model="userPrivate"
+                type="checkbox"
+                name="private" />
+              <label for="id_private" class="form-check-label">
                 {{ userformFields.private.label }}
               </label>
-              <br>
-              <p
-                class="help-block"
-                v-html="userformFields.private.help_text"
-              />
+              <p class="help-block" v-html="userformFields.private.help_text" />
             </div>
           </div>
         </div>
@@ -391,7 +304,6 @@
 </template>
 
 <script>
-
 import LetterMixin from './lib/letter-mixin'
 import I18nMixin from '../../lib/i18n-mixin'
 
@@ -472,7 +384,7 @@ export default {
       default: ''
     }
   },
-  data () {
+  data() {
     return {
       bodyRows: MIN_BODY_ROWS,
       bodyBeforeChange: '',
@@ -483,97 +395,105 @@ export default {
       subjectValue: this.initialSubject || '',
       bodyValue: this.initialBody || '',
       fullTextValue: this.initialFullText,
-      firstNameValue: this.initialFirstName || (this.user && this.user.first_name) || '',
-      lastNameValue: this.initialLastName || (this.user && this.user.last_name) || '',
-      privateValue: this.initialPrivate || (this.user && this.user.private) || false,
+      firstNameValue:
+        this.initialFirstName || (this.user && this.user.first_name) || '',
+      lastNameValue:
+        this.initialLastName || (this.user && this.user.last_name) || '',
+      privateValue:
+        this.initialPrivate || (this.user && this.user.private) || false
     }
   },
   computed: {
-    nonFieldErrors () {
+    nonFieldErrors() {
       return this.form.nonFieldErrors
     },
-    form () {
+    form() {
       return this.requestForm
     },
-    formFields () {
+    formFields() {
       return this.form.fields
     },
-    errors () {
+    errors() {
       return this.form.errors
     },
-    userformFields () {
+    userformFields() {
       return this.userForm.fields
     },
-    usererrors () {
+    usererrors() {
       return this.userForm.errors
     },
-    hasLawNotes () {
+    hasLawNotes() {
       if (this.defaultLaw) {
         return !!this.defaultLaw.request_note_html
       }
       // FIXME: find all notes of all public body default laws?
       return false
     },
-    hasPublicBodyNotes () {
+    hasPublicBodyNotes() {
       if (this.publicBody) {
         return !!this.publicBody.request_note_html
       }
       // FIXME: find all notes of all public body default laws?
       return false
     },
-    lawNotes () {
+    lawNotes() {
       if (this.hasLawNotes) {
         return this.defaultLaw.request_note_html
       }
       return ''
     },
-    publicBodyNotes () {
+    publicBodyNotes() {
       if (this.hasPublicBodyNotes) {
         return this.publicBody.request_note_html
       }
       return ''
     },
-    canBatchRequest () {
+    canBatchRequest() {
       return this.config.settings.user_can_create_batch
     },
-    hasUser () {
+    nonMeaningfulSubjects() {
+      return this.config.settings.non_meaningful_subject_regex.map(
+        (x) => new RegExp(x, 'i')
+      )
+    },
+    hasUser() {
       return this.user && this.user.id
     },
     subject: {
-      get () {
+      get() {
         return this.subjectValue
       },
-      set (value) {
+      set(value) {
         this.subjectValue = value
         this.$emit('update:initialSubject', value)
       }
     },
-    hasBody () {
+    hasBody() {
       return this.body && this.body.length > 0
     },
     body: {
-      get () {
+      get() {
         return this.bodyValue
       },
-      set (value) {
+      set(value) {
         this.bodyValue = value
         this.$emit('update:initialBody', value)
       }
     },
-    allowFullText () {
+    allowFullText() {
       return this.hasUser && !this.hideFullText
     },
-    warnFullText () {
+    warnFullText() {
       return this.allowFullText && this.multipleLaws
     },
-    multipleLaws () {
+    multipleLaws() {
       return this.defaultLaw === null
     },
     fullText: {
-      get () {
+      get() {
         return this.fullTextValue
       },
-      set (value) {
+      set(value) {
         this.fullTextValue = value
         this.$emit('update:initialFullText', value)
         if (value) {
@@ -584,62 +504,73 @@ export default {
             this.body = this.bodyBeforeChange
           }
         }
-        let newLineCount = (this.body.match(/\n/g) || []).length
-        this.bodyRows = Math.max(MIN_BODY_ROWS, Math.min(newLineCount + 1, MAX_BODY_ROWS))
+        const newLineCount = (this.body.match(/\n/g) || []).length
+        this.bodyRows = Math.max(
+          MIN_BODY_ROWS,
+          Math.min(newLineCount + 1, MAX_BODY_ROWS)
+        )
       }
     },
     first_name: {
-      get () {
+      get() {
         return this.firstNameValue
       },
-      set (value) {
+      set(value) {
         this.firstNameValue = value
         this.$emit('update:initialFirstName', value)
       }
     },
     last_name: {
-      get () {
+      get() {
         return this.lastNameValue
       },
-      set (value) {
+      set(value) {
         this.lastNameValue = value
         this.$emit('update:initialLastName', value)
       }
     },
     userPrivate: {
-      get () {
+      get() {
         return this.privateValue
       },
-      set (value) {
+      set(value) {
         this.privateValue = value
         this.$emit('update:initialPrivate', value)
       }
     },
-    hasPublicBodies () {
+    hasPublicBodies() {
       return this.publicBodies.length > 0
     },
-    publicBody () {
+    publicBody() {
       return this.publicbodies[0]
     },
-    publicBodies () {
+    publicBodies() {
       // FIXME
       return this.publicbodies
+    },
+    isMeaningfulSubject() {
+      for (const re of this.nonMeaningfulSubjects) {
+        if (re.test(this.subject)) {
+          return false
+        }
+      }
+      return true
     }
   },
-  mounted () {
+  mounted() {
     this.bodyChanged()
   },
   methods: {
-    resetFullText () {
+    resetFullText() {
       this.savedFullTextBody = this.body
       this.fullTextDisabled = false
       this.fullText = false
     },
-    bodyChanged () {
+    bodyChanged() {
       if (this.fullText) {
         this.fullTextDisabled = true
       }
-      var ta = document.querySelector('[name=body]')
+      const ta = document.querySelector('[name=body]')
       while (ta.scrollHeight > ta.clientHeight && ta.rows < MAX_BODY_ROWS) {
         ta.style.overflow = 'hidden'
         ta.rows += 1
@@ -649,17 +580,15 @@ export default {
       }
       this.bodyRows = ta.rows
     },
-    showFullLetter () {
+    showFullLetter() {
       this.fullLetter = true
     }
   }
 }
 </script>
 
-
 <style lang="scss" scoped>
-
-@import "../../../styles/variables";
+@import '../../../styles/variables';
 
 .make-request-container {
   padding-bottom: 1rem;
@@ -693,7 +622,7 @@ legend {
 }
 
 .publicbody-summary-container {
-  margin: 0 0 $spacer*2;
+  margin: 0 0 $spacer * 2;
 }
 
 .publicbody-summary {
@@ -711,7 +640,8 @@ legend {
   font-size: $font-size-sm;
 }
 
-.body-text {
+.body-text,
+.body-text-em {
   hyphens: none;
   white-space: pre-wrap;
   word-wrap: break-word;
@@ -740,10 +670,12 @@ legend {
   height: 5em;
 }
 
-.saved-full-text-enter-active, .saved-full-text-leave-active {
-  transition: opacity .5s;
+.saved-full-text-enter-active,
+.saved-full-text-leave-active {
+  transition: opacity 0.5s;
 }
-.saved-full-text-enter, .saved-full-text-leave-to {
+.saved-full-text-enter,
+.saved-full-text-leave-to {
   opacity: 0;
 }
 
@@ -751,5 +683,4 @@ legend {
   color: #999;
   text-decoration: underline;
 }
-
 </style>

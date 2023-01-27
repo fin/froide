@@ -3,6 +3,7 @@
 {% load i18n %}
 {% load static %}
 {% load block_helper %}
+{% load frontendbuild %}
 {% load form_helper %}
 
 {% block title %}{% blocktrans with title=object.title %}Upload postal mail for “{{ title }}”{% endblocktrans %}{% endblock %}
@@ -14,7 +15,7 @@
 
 {% block body %}
 
-<div class="breadcrumb-container">
+<div class="bg-gray-100">
   {% translate "Upload postal mail" as breadcrumb_label %}
   {% include "foirequest/header/breadcrumb.html" with last_item=breadcrumb_label %}
 </div>
@@ -40,9 +41,9 @@
           <legend>
             {% trans "What is the status of your request after this letter?" %}
           </legend>
-          {% include "foirequest/header/_set_status.html" with status_form=status_form %}
+          {% include "foirequest/header/_set_status.html" with status_form=status_form inline=False %}
         </fieldset>
-        <p class="text-right">
+        <p class="text-end">
           <button type="submit" class="btn btn-primary">
             {% trans "Add letter" %}
           </button>
@@ -57,21 +58,9 @@
 
 {% block scripts %}
   {{ block.super }}
-  {% addtoblock "js" %}
-    <script src="{% static 'js/common.js' %}" defer></script>
-  {% endaddtoblock %}
-  {% addtoblock "css" %}<link rel="stylesheet" href="{% static 'css/common.css' %}"/>{% endaddtoblock %}
 
-  {% addtoblock "js" %}
-    {{ form.media.js }}
-  {% endaddtoblock %}
-  {% addtoblock "css" %}
-    {{ form.media.css }}
-  {% endaddtoblock %}
-
-  {# For set status #}
-  {% addtoblock "js" %}
-    <script src="{% static 'js/request-alpha.js' %}" defer></script>
-  {% endaddtoblock %}
+  {% addfrontendbuild "request.js" %}
+  {% addfrontendbuild "publicbody.js" %}
+  {% addfrontendbuild "fileuploader.js" %}
 
   {% endblock %}

@@ -1,15 +1,16 @@
 from django.conf import settings
 from django.contrib.syndication.views import Feed
-from django.utils.feedgenerator import Atom1Feed
-from django.utils.translation import gettext_lazy as _
-from django.urls import reverse
 from django.shortcuts import get_object_or_404
 from django.template.defaultfilters import linebreaksbr
+from django.urls import reverse
+from django.utils.feedgenerator import Atom1Feed
+from django.utils.translation import gettext_lazy as _
 
+from froide.foirequest.models.event import EVENT_DETAILS
 from froide.helper.feed_utils import clean_feed_output
 
-from .models import FoiRequest
 from .filters import FOIREQUEST_FILTER_DICT
+from .models import FoiRequest
 
 
 class LatestFoiRequestsFeed(Feed):
@@ -73,7 +74,7 @@ class LatestFoiRequestsFeed(Feed):
         return self.make_url(self.url_name)
 
     def items(self):
-        return self.items.order_by("-first_message")[:15]
+        return self.items.order_by("-created_at")[:15]
 
     @clean_feed_output
     def item_title(self, item):
@@ -91,7 +92,7 @@ class LatestFoiRequestsFeed(Feed):
         return linebreaksbr(item.get_description())
 
     def item_pubdate(self, item):
-        return item.first_message
+        return item.created_at
 
 
 class LatestFoiRequestsFeedAtom(LatestFoiRequestsFeed):
@@ -121,7 +122,9 @@ class FoiRequestFeed(Feed):
         return obj.get_description()
 
     def items(self, obj):
-        return obj.foievent_set.order_by("-timestamp")[:15]
+        return obj.foievent_set.filter(event_name__in=EVENT_DETAILS).order_by(
+            "-timestamp"
+        )[:15]
 
     @clean_feed_output
     def item_title(self, item):

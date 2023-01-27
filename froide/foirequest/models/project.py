@@ -1,16 +1,17 @@
-from django.db import models
 from django.conf import settings
+from django.contrib.sites.managers import CurrentSiteManager
+from django.contrib.sites.models import Site
+from django.db import models
+from django.dispatch import Signal
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
-from django.contrib.sites.models import Site
-from django.dispatch import Signal
-from django.contrib.sites.managers import CurrentSiteManager
 
 from taggit.managers import TaggableManager
 from taggit.models import TaggedItemBase
 
-from froide.team.models import Team
+from froide.helper.text_utils import redact_plaintext
 from froide.publicbody.models import PublicBody
+from froide.team.models import Team
 
 
 class TaggedFoiProject(TaggedItemBase):
@@ -134,3 +135,21 @@ class FoiProject(models.Model):
         for req in self.foirequest_set.all():
             if not req.is_public():
                 req.make_public(user=user)
+
+    def recalculate_order(self):
+        requests = self.foirequest_set.order_by("project_order").all()
+        for i, req in enumerate(requests):
+            if req.project != self or req.project_order != i:
+                req.project = self
+                req.project_order = i
+                req.save()
+
+            if req.public_body:
+                self.publicbodies.add(req.public_body)
+
+        self.request_count = len(requests)
+        self.save()
+
+    def get_description(self):
+        user_replacements = self.user.get_redactions()
+        return redact_plaintext(self.description, user_replacements=user_replacements)

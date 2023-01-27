@@ -1,7 +1,10 @@
-import os
 import hashlib
+import os
 
 from django.core.files.storage import FileSystemStorage
+from django.db import models
+
+from froide.helper.text_utils import slugify
 
 
 def sha256(file):
@@ -21,6 +24,29 @@ class OverwriteStorage(FileSystemStorage):
             full_path = self.path(name)
             os.remove(full_path)
         return name
+
+
+def delete_file_if_last_reference(
+    instance: models.Model, field_name: str, delete_prefix: bool = False
+):
+    field_file = getattr(instance, field_name)
+    more_references_exist = (
+        instance.__class__.objects.filter(**{field_name: field_file})
+        .exclude(pk=instance.pk)
+        .exists()
+    )
+    if more_references_exist:
+        return
+    name = field_file.name
+    field_file.delete(save=False)
+    if delete_prefix:
+        # Delete all files with that prefix (e.g. thumbnails)
+        prefix_dir = os.path.dirname(name)
+        prefix_name = os.path.basename(name)
+        _dirs, dir_files = field_file.storage.listdir(prefix_dir)
+        for dir_file in dir_files:
+            if dir_file.startswith(prefix_name):
+                field_file.storage.delete(os.path.join(prefix_dir, dir_file))
 
 
 class HashedFilenameStorage(FileSystemStorage):
@@ -59,3 +85,18 @@ class HashedFilenameStorage(FileSystemStorage):
 def add_number_to_filename(filename, num):
     path, ext = os.path.splitext(filename)
     return "%s_%d%s" % (path, num, ext)
+
+
+def make_filename(name: str) -> str:
+    name = os.path.basename(name).rsplit(".", 1)
+    return ".".join(slugify(n) for n in name)
+
+
+def make_unique_filename(name, existing_names):
+    slugified_name = make_filename(name)
+    name = slugified_name
+    index = 0
+    while name in existing_names:
+        index += 1
+        name = add_number_to_filename(slugified_name, index)
+    return name

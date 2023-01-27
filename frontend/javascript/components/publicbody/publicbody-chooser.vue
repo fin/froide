@@ -2,15 +2,11 @@
   <div class="publicbody-chooser mb-3">
     <button
       v-if="!showSearch"
-      class="btn btn-sm btn-light float-right"
-      @click.prevent="showSearch = true"
-    >
+      class="btn btn-sm btn-light float-end"
+      @click.prevent="showSearch = true">
       {{ i18n.searchPublicBodyLabel }}
     </button>
-    <div
-      v-if="showSearch"
-      class="form-search"
-    >
+    <div v-if="showSearch" class="form-search">
       <div class="input-group">
         <input
           v-model="search"
@@ -18,37 +14,22 @@
           class="search-public_bodies form-control"
           :placeholder="i18n.publicBodySearchPlaceholder"
           @keyup="triggerAutocomplete"
-          @keydown.enter.prevent="triggerAutocomplete"
-        >
-        <div class="input-group-append">
-          <button
-            type="button"
-            class="btn btn-outline-primary search-public_bodies-submit"
-            @click="triggerAutocomplete"
-          >
-            <i class="fa fa-search" />
-            {{ i18n.search }}
-          </button>
-        </div>
+          @keydown.enter.prevent="triggerAutocomplete" />
+        <button
+          type="button"
+          class="btn btn-outline-primary search-public_bodies-submit"
+          @click="triggerAutocomplete">
+          <i class="fa fa-search" />
+          {{ i18n.search }}
+        </button>
       </div>
     </div>
-    <div
-      v-if="searching"
-      class="search-spinner"
-    >
-      <div
-        class="spinner-border"
-        role="status"
-      >
-        <span class="sr-only">Loading...</span>
+    <div v-if="searching" class="search-spinner">
+      <div class="spinner-border" role="status">
+        <span class="visually-hidden">Loading...</span>
       </div>
     </div>
-    <component
-      :is="listView"
-      :name="name"
-      :scope="scope"
-      :config="config"
-    />
+    <component :is="listView" :name="name" :scope="scope" :config="config" />
   </div>
 </template>
 
@@ -91,14 +72,14 @@ export default {
     },
     searchCollapsed: {
       type: Boolean,
-      default: false,
+      default: false
     },
     listView: {
       type: String,
       default: 'resultList'
     }
   },
-  data () {
+  data() {
     return {
       search: this.defaultsearch,
       lastQuery: null,
@@ -108,17 +89,17 @@ export default {
     }
   },
   computed: {
-    label () {
+    label() {
       if (this.publicBody) {
         return this.publicBody.name
       }
       return ''
     },
-    publicBody () {
+    publicBody() {
       return this.getPublicBodyByScope(this.scope)
     }
   },
-  mounted () {
+  mounted() {
     if (this.defaultsearch && this.searchMeta === null) {
       this.triggerAutocomplete()
     }

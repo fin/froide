@@ -1,8 +1,8 @@
 import csv
 import re
+from datetime import datetime
 
 from django.http import StreamingHttpResponse
-
 
 FORMULA_START = re.compile(r"^([=\+\-@])")
 
@@ -22,20 +22,24 @@ def get_dict(obj, fields):
     d = {}
 
     for field in fields:
-        if field in d:
-            continue
         if isinstance(field, tuple):
             field_name = field[0]
+        else:
+            field_name = field
+        if field_name in d:
+            continue
+        if isinstance(field, tuple):
             value = field[1](obj)
         else:
             value = obj
-            field_name = field
             for f in field.split("__"):
                 value = getattr(value, f, None)
                 if value is None:
                     break
         if value is None:
             d[field_name] = ""
+        elif isinstance(value, datetime):
+            d[field_name] = value.isoformat()
         else:
             d[field_name] = str(value)
     return d

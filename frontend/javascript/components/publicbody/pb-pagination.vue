@@ -3,13 +3,13 @@
     <li v-if="hasPreviousSearchResults" class="page-item">
       <a href="#" class="page-link prev" @click.prevent="getPrevious">
         <span aria-hidden="true">&laquo;</span>
-        <span class="sr-only">{{ i18n.previous }}</span>
+        <span class="visually-hidden">{{ i18n.previous }}</span>
       </a>
     </li>
     <li v-else class="page-item disabled">
       <a class="page-link" href="#" tabindex="-1">
         <span aria-hidden="true">&laquo;</span>
-        <span class="sr-only">{{ i18n.previous }}</span>
+        <span class="visually-hidden">{{ i18n.previous }}</span>
       </a>
     </li>
     <li class="page-item disabled">
@@ -20,12 +20,12 @@
     <li v-if="hasNextSearchResults" class="page-item">
       <a href="#" class="page-link next" @click.prevent="getNext">
         <span aria-hidden="true">&raquo;</span>
-        <span class="sr-only">{{ i18n.next }}</span>
+        <span class="visually-hidden">{{ i18n.next }}</span>
       </a>
     </li>
     <li v-else class="page-item disabled">
       <a class="page-link" href="#" tabindex="-1">
-        <span class="sr-only">{{ i18n.next }}</span>
+        <span class="visually-hidden">{{ i18n.next }}</span>
         <span aria-hidden="true">&raquo;</span>
       </a>
     </li>
@@ -33,56 +33,55 @@
 </template>
 
 <script>
-
-import {mapGetters, mapActions} from 'vuex'
+import { mapGetters, mapActions } from 'vuex'
 
 export default {
   name: 'pb-pagination',
   props: ['scope', 'i18n'],
   computed: {
-    searchResults () {
+    searchResults() {
       return this.getScopedSearchResults(this.scope)
     },
-    hasSearchResults () {
+    hasSearchResults() {
       return this.searchResults.length > 0
     },
-    hasNextSearchResults () {
-      let meta = this.getScopedSearchMeta(this.scope)
+    hasNextSearchResults() {
+      const meta = this.getScopedSearchMeta(this.scope)
       if (!meta) {
         return false
       }
       return meta.next
     },
-    hasPreviousSearchResults () {
-      let meta = this.getScopedSearchMeta(this.scope)
+    hasPreviousSearchResults() {
+      const meta = this.getScopedSearchMeta(this.scope)
       if (!meta) {
         return false
       }
       return meta.previous
     },
-    currentResultPage () {
-      let meta = this.getScopedSearchMeta(this.scope)
+    currentResultPage() {
+      const meta = this.getScopedSearchMeta(this.scope)
       if (!meta) {
         return 0
       }
-      return (meta.offset / meta.limit) + 1
+      return meta.offset / meta.limit + 1
     },
-    maxResultPage () {
-      let meta = this.getScopedSearchMeta(this.scope)
+    maxResultPage() {
+      const meta = this.getScopedSearchMeta(this.scope)
       if (!meta) {
         return 0
       }
       return Math.ceil(meta.total_count / meta.limit)
     },
-    currentResultsLength () {
-      let sr = this.searchResults
+    currentResultsLength() {
+      const sr = this.searchResults
       if (sr) {
         return sr.length
       }
       return null
     },
-    searchResultsLength () {
-      let meta = this.getScopedSearchMeta(this.scope)
+    searchResultsLength() {
+      const meta = this.getScopedSearchMeta(this.scope)
       if (meta) {
         return meta.total_count
       }
@@ -95,19 +94,15 @@ export default {
       'getScopedSearchResults',
       'getScopedSearchMeta'
     ])
-
   },
   methods: {
-    getNext (e) {
+    getNext(e) {
       this.getNextSearchResults(this.scope)
     },
-    getPrevious (e) {
+    getPrevious(e) {
       this.getPreviousSearchResults(this.scope)
     },
-    ...mapActions([
-      'getNextSearchResults',
-      'getPreviousSearchResults'
-    ])
+    ...mapActions(['getNextSearchResults', 'getPreviousSearchResults'])
   }
 }
 </script>

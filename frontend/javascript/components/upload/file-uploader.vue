@@ -7,29 +7,28 @@
         :key="upload"
         type="hidden"
         :name="name"
-        :value="upload"
-      >
+        :value="upload" />
       <input
         v-if="!canSubmit"
         type="hidden"
         name="upload-pending"
         value=""
-        required
-      >
+        required />
     </template>
   </div>
 </template>
 
 <script>
-
 import Vue from 'vue'
 
 import Uppy from '@uppy/core'
 import Tus from '@uppy/tus'
 import Dashboard from '@uppy/dashboard'
 
-import I18nMixin from '../../lib/i18n-mixin'
+import '@uppy/core/dist/style.css'
+import '@uppy/dashboard/dist/style.css'
 
+import I18nMixin from '../../lib/i18n-mixin'
 
 export default {
   name: 'FileUploader',
@@ -51,7 +50,7 @@ export default {
     required: {
       type: Boolean,
       default: false,
-      required: false,
+      required: false
     },
     allowedFileTypes: {
       type: Array,
@@ -62,38 +61,43 @@ export default {
       type: Boolean,
       default: false,
       required: false
+    },
+    allowRemove: {
+      type: Boolean,
+      default: true,
+      required: false
     }
   },
-  data () {
+  data() {
     return {
       files: {},
       uploading: false
     }
   },
   computed: {
-    csrf () {
+    csrf() {
       return document.querySelector('[name=csrfmiddlewaretoken]').value
     },
-    canSubmit () {
+    canSubmit() {
       return (!this.required || this.hasFiles) && this.uploadComplete
     },
-    showSubmit () {
+    showSubmit() {
       return this.uploading || this.canSubmit
     },
-    hasFiles () {
+    hasFiles() {
       return this.uploads.length > 0
     },
-    uploadComplete () {
-      for (let key in this.files) {
+    uploadComplete() {
+      for (const key in this.files) {
         if (this.files[key] === false) {
           return false
         }
       }
       return true
     },
-    uploads () {
+    uploads() {
       const uploads = []
-      for (let key in this.files) {
+      for (const key in this.files) {
         if (this.files[key] !== false) {
           uploads.push(this.files[key])
         }
@@ -101,7 +105,7 @@ export default {
       return uploads
     }
   },
-  mounted () {
+  mounted() {
     const uppyLocale = {
       strings: this.config.i18n.uppy,
       pluralize: (n) => {
@@ -112,7 +116,7 @@ export default {
       }
     }
 
-    this.uppy = Uppy({
+    this.uppy = new Uppy({
       autoProceed: this.autoProceed,
       locale: uppyLocale,
       restrictions: {
@@ -124,7 +128,9 @@ export default {
       target: this.$refs.uppy,
       height: 250,
       showLinkToFileUploadResult: false,
-      proudlyDisplayPoweredByUppy: false
+      proudlyDisplayPoweredByUppy: false,
+      showRemoveButtonAfterComplete: this.allowRemove,
+      doneButtonHandler: null
     })
     this.uppy.use(Tus, {
       endpoint: this.config.url.tusEndpoint,
@@ -148,7 +154,7 @@ export default {
     this.uppy.on('upload-success', (file, response) => {
       Vue.set(this.files, file.id, response.uploadURL)
       this.$emit('ready', this.canSubmit)
-      this.$emit('upload-success', {uppy: this.uppy, file, response})
+      this.$emit('upload-success', { uppy: this.uppy, file, response })
     })
     this.uppy.on('complete', (result) => {
       console.log('successful files:', result.successful)
@@ -159,9 +165,3 @@ export default {
   }
 }
 </script>
-
-<style lang="scss" scoped>
-@import '~@uppy/core/dist/style.css';
-@import '~@uppy/dashboard/dist/style.css';
-
-</style>

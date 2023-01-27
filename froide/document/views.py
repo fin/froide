@@ -1,29 +1,31 @@
 import json
+from functools import wraps
 
-from django.utils.translation import gettext_lazy as _, gettext
-from django.urls import reverse
-from django.shortcuts import redirect, get_object_or_404, Http404, render
-from django.views.generic import DetailView
-from django.contrib import messages
 from django.conf import settings
-
-from elasticsearch_dsl.query import Q
+from django.contrib import messages
+from django.shortcuts import Http404, get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils.translation import gettext
+from django.utils.translation import gettext_lazy as _
+from django.views.decorators.http import require_POST
+from django.views.generic import DetailView
 
 from crossdomainmedia import CrossDomainMediaMixin
-
+from elasticsearch_dsl.query import Q
+from filingcabinet.models import Page
 from taggit.models import Tag
 
-from filingcabinet.models import Page
-
-from froide.team.models import Team
 from froide.helper.search.views import BaseSearchView
+from froide.helper.text_utils import slugify
+from froide.helper.utils import render_400, render_403
+from froide.team.models import Team
 
+from .auth import DocumentCrossDomainMediaAuth
 from .documents import PageDocument
+from .feeds import DocumentSearchFeed
 from .filters import PageDocumentFilterset
 from .forms import DocumentUploadForm
 from .models import Document
-from .auth import DocumentCrossDomainMediaAuth
-from .feeds import DocumentSearchFeed
 
 
 class DocumentSearchView(BaseSearchView):
@@ -52,7 +54,6 @@ class DocumentSearchView(BaseSearchView):
     select_related = ("document",)
 
     def get_base_search(self):
-        # FIXME: add team
         q = Q("term", public=True)
         if self.request.user.is_authenticated:
             q |= Q("term", user=self.request.user.pk)
@@ -123,7 +124,7 @@ def upload_documents(request):
         return redirect("/")
 
     if request.method == "POST":
-        form = DocumentUploadForm(request.POST)
+        form = DocumentUploadForm(request, request.POST)
         if form.is_valid():
             doc_count = form.save(request.user)
             messages.add_message(
@@ -133,7 +134,7 @@ def upload_documents(request):
             )
             return redirect(request.get_full_path())
     else:
-        form = DocumentUploadForm()
+        form = DocumentUploadForm(request)
 
     config = json.dumps(
         {
@@ -150,3 +151,44 @@ def upload_documents(request):
         }
     )
     return render(request, "document/upload.html", {"form": form, "config": config})
+
+
+def allow_write_document(func):
+    @wraps(func)
+    def inner(request, pk, *args, **kwargs):
+        document = get_object_or_404(Document, pk=pk)
+        if document.can_write(request):
+            return func(request, document, *args, **kwargs)
+        return render_403(request)
+
+    return inner
+
+
+def set_slug(document, property_value):
+    document.slug = slugify(property_value)
+    document.save(update_fields=["slug"])
+
+
+@require_POST
+@allow_write_document
+def set_title(request, document):
+    return set_property(document, request, "title", extra_action=set_slug)
+
+
+@require_POST
+@allow_write_document
+def set_description(request, document):
+    return set_property(document, request, "description")
+
+
+def set_property(document, request, name, extra_action=None):
+    value = request.POST.get(name, None)
+    if value is None:
+        return render_400(request)
+    setattr(document, name, value)
+    document.save(update_fields=[name])
+    if extra_action is not None:
+        extra_action(document, value)
+
+    messages.add_message(request, messages.SUCCESS, _("The document has been saved."))
+    return redirect(document)

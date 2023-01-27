@@ -1,15 +1,17 @@
 from typing import Dict, Optional, Type
 
+from django import forms
+from django.contrib.admin.sites import AdminSite
+from django.contrib.admin.widgets import ForeignKeyRawIdWidget
 from django.db.models import Model, QuerySet
 from django.utils.translation import gettext_lazy as _
-from django import forms
-from django.contrib.admin.widgets import ForeignKeyRawIdWidget
-from django.contrib.admin.sites import AdminSite
 
 from taggit.forms import TagField
 from taggit.utils import edit_string_for_tags
 
 from .widgets import TagAutocompleteWidget
+
+TAG_NAME_MAX_CHARS = 100
 
 
 class TagObjectForm(forms.Form):
@@ -36,7 +38,11 @@ class TagObjectForm(forms.Form):
         )
 
     def save(self, obj: Model) -> None:
-        obj.tags.set(*[t[:100] for t in self.cleaned_data["tags"]])
+        cleaned_tags = [t[:TAG_NAME_MAX_CHARS] for t in self.cleaned_data["tags"]]
+        if not cleaned_tags:
+            obj.tags.clear()
+        else:
+            obj.tags.set(cleaned_tags)
         obj.save()
 
 

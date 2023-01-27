@@ -1,31 +1,26 @@
-import os
 import logging
+import os
+from functools import partial
 
 from django.conf import settings
+from django.core.files.base import ContentFile
+from django.db import transaction
 from django.utils import translation
 from django.utils.translation import gettext_lazy as _
-from django.db import transaction
-from django.core.files.base import ContentFile
 
 from celery.exceptions import SoftTimeLimitExceeded
-
-from filingcabinet.pdf_utils import convert_to_pdf, convert_images_to_ocred_pdf, run_ocr
-
 from froide.celery import app as celery_app
 from froide.publicbody.models import PublicBody
 from froide.upload.models import Upload
-from froide.helper.redaction import redact_file
 
-from .models import FoiRequest, FoiMessage, FoiAttachment, FoiProject
-from .foi_mail import _process_mail, _fetch_mail
-from .notifications import send_classification_reminder
+from .foi_mail import _fetch_mail, _process_mail
+from .models import FoiAttachment, FoiProject, FoiRequest
+from .notifications import batch_update_requester, send_classification_reminder
 
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(
-    name="froide.foirequest.tasks.process_mail", acks_late=True, time_limit=60
-)
+@celery_app.task(name="froide.foirequest.tasks.process_mail", acks_late=True)
 def process_mail(*args, **kwargs):
     translation.activate(settings.LANGUAGE_CODE)
 
@@ -54,6 +49,11 @@ def detect_asleep():
 
 
 @celery_app.task
+def batch_update_requester_task():
+    return batch_update_requester()
+
+
+@celery_app.task
 def classification_reminder():
     translation.activate(settings.LANGUAGE_CODE)
     for foirequest in FoiRequest.objects.get_unclassified():
@@ -62,11 +62,9 @@ def classification_reminder():
 
 @celery_app.task
 def check_delivery_status(message_id, count=None, extended=False):
-    try:
-        message = FoiMessage.objects.get(id=message_id)
-    except FoiMessage.DoesNotExist:
-        return
-    message.check_delivery_status(count=count, extended=extended)
+    # Keep until task queue is empty
+    # Replaced with froide.helper.tasks.check_mail_log
+    pass
 
 
 @celery_app.task
@@ -114,6 +112,39 @@ def create_project_request(project_id, publicbody_id, sequence=0, **kwargs):
     return foirequest.pk
 
 
+@celery_app.task
+def create_project_messages(foirequest_ids, user_id, **form_data):
+    for req_id in foirequest_ids:
+        create_project_message.delay(req_id, user_id, **form_data)
+
+
+@celery_app.task
+def create_project_message(foirequest_id, user_id, **form_data):
+    from django.contrib.auth import get_user_model
+
+    from froide.foirequest.forms.message import SendMessageForm
+
+    User = get_user_model()
+
+    try:
+        foirequest = FoiRequest.objects.get(id=foirequest_id)
+    except FoiRequest.DoesNotExist:
+        # request does not exist anymore?
+        return
+    assert foirequest.project
+
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return
+
+    # Send to public body's default email
+    form_data["to"] = foirequest.public_body.email
+    form = SendMessageForm(foirequest=foirequest, data=form_data)
+    if form.is_valid():
+        form.save(user=user, bulk=True)
+
+
 @celery_app.task(name="froide.foirequest.tasks.convert_attachment_task", time_limit=60)
 def convert_attachment_task(instance_id):
     try:
@@ -145,13 +176,18 @@ def ocr_pdf_attachment(att):
     att.approved = False
     att.save()
 
-    ocr_pdf_task.delay(
-        att.pk,
-        ocred_att.pk,
+    transaction.on_commit(
+        partial(
+            ocr_pdf_task.delay,
+            att.pk,
+            ocred_att.pk,
+        )
     )
 
 
 def convert_attachment(att):
+    from filingcabinet.pdf_utils import convert_to_pdf
+
     output_bytes = convert_to_pdf(
         att.file.path,
         binary_name=settings.FROIDE_CONFIG.get("doc_conversion_binary"),
@@ -191,6 +227,8 @@ def convert_attachment(att):
     soft_time_limit=60 * 4,
 )
 def convert_images_to_pdf_task(att_ids, target_id, instructions, can_approve=True):
+    from filingcabinet.pdf_utils import convert_images_to_ocred_pdf
+
     att_qs = FoiAttachment.objects.filter(id__in=att_ids)
     att_map = {a.id: a for a in att_qs}
     atts = [att_map[a_id] for a_id in att_ids]
@@ -222,6 +260,8 @@ def convert_images_to_pdf_task(att_ids, target_id, instructions, can_approve=Tru
     soft_time_limit=60 * 4,
 )
 def ocr_pdf_task(att_id, target_id, can_approve=True):
+    from filingcabinet.pdf_utils import run_ocr
+
     try:
         attachment = FoiAttachment.objects.get(pk=att_id)
     except FoiAttachment.DoesNotExist:
@@ -233,8 +273,11 @@ def ocr_pdf_task(att_id, target_id, can_approve=True):
 
     try:
         pdf_bytes = run_ocr(
-            attachment.file.path, language=settings.TESSERACT_LANGUAGE if hasattr(
-                settings, 'TESSERACT_LANGUAGE') else settings.LANGUAGE_CODE, timeout=180
+            attachment.file.path,
+            language=settings.TESSERACT_LANGUAGE
+            if settings.TESSERACT_LANGUAGE
+            else settings.LANGUAGE_CODE,
+            timeout=180,
         )
     except SoftTimeLimitExceeded:
         pdf_bytes = None
@@ -257,6 +300,10 @@ def ocr_pdf_task(att_id, target_id, can_approve=True):
     soft_time_limit=60 * 5,
 )
 def redact_attachment_task(att_id, target_id, instructions):
+    from filingcabinet.pdf_utils import run_ocr
+
+    from froide.helper.redaction import redact_file
+
     try:
         attachment = FoiAttachment.objects.get(pk=att_id)
     except FoiAttachment.DoesNotExist:
@@ -302,7 +349,11 @@ def redact_attachment_task(att_id, target_id, instructions):
 
     try:
         pdf_bytes = run_ocr(
-            target.file.path, language=settings.TESSERACT_LANGUAGE if hasattr(settings, 'TESSERACT_LANGUAGE') else settings.LANGUAGE_CODE, timeout=60 * 4
+            target.file.path,
+            language=settings.TESSERACT_LANGUAGE
+            if settings.TESSERACT_LANGUAGE
+            else settings.LANGUAGE_CODE,
+            timeout=60 * 4,
         )
     except SoftTimeLimitExceeded:
         pdf_bytes = None
@@ -318,7 +369,7 @@ def redact_attachment_task(att_id, target_id, instructions):
     target.can_approve = True
     target.pending = False
     target.approve_and_save()
-    FoiAttachment.attachment_published.send(sender=target, user=None)
+    FoiAttachment.attachment_approved.send(sender=target, user=None, redacted=True)
 
 
 @celery_app.task(name="froide.foirequest.tasks.move_upload_to_attachment")

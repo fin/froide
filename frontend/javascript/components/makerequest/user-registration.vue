@@ -2,20 +2,18 @@
   <div>
     <div class="card mb-3">
       <div class="card-body">
-        <div class="form-group row">
+        <div class="mb-3 row">
           <label
             for="id_user_email"
             class="col-sm-3 col-form-label"
-            :class="{ 'text-danger': errors.user_email, 'field-required': !user }"
-          >
+            :class="{
+              'text-danger': errors.user_email,
+              'field-required': !user
+            }">
             {{ i18n.yourEmail }}
           </label>
           <div class="col-sm-9">
-            <p
-              v-if="user"
-              id="email_address"
-              class="form-control-plaintext"
-            >
+            <p v-if="user" id="email_address" class="form-control-plaintext">
               {{ user.email }}
             </p>
             <div v-else>
@@ -26,25 +24,25 @@
                 class="form-control"
                 :class="{ 'is-invalid': errors.user_email }"
                 :placeholder="formFields.user_email.placeholder"
-                required
-              >
+                required />
               <p
                 v-for="e in errors.user_email"
                 :key="e.message"
-                class="text-danger"
-              >
+                class="text-danger">
                 {{ e.message }}
               </p>
             </div>
           </div>
         </div>
 
-        <div class="form-group row">
+        <div class="mb-3 row">
           <label
             for="id_address"
             class="col-sm-3 col-form-label"
-            :class="{ 'text-danger': errors.address, 'field-required': requiresPostalAddress}"
-          >
+            :class="{
+              'text-danger': errors.address,
+              'field-required': requiresPostalAddress
+            }">
             {{ i18n.yourAddress }}
           </label>
           <div class="col-sm-9">
@@ -55,12 +53,11 @@
                 class="form-control"
                 :class="{ 'is-invalid': errors.address }"
                 :placeholder="formFields.address.placeholder"
-                :required="requiresPostalAddress"
-              />
-              <p
-                v-for="e in errors.address"
-                :key="e.message"
-              >
+                :required="requiresPostalAddress" />
+              <div v-if="!isAllowedAddress" class="mt-3 alert alert-warning">
+                {{ i18n.pleaseFollowAddressFormat }}
+              </div>
+              <p v-for="e in errors.address" :key="e.message">
                 {{ e.message }}
               </p>
               <p class="help-block">
@@ -70,18 +67,11 @@
           </div>
         </div>
         <template v-if="formFields.time">
-          <input
-            type="hidden"
-            name="time"
-            :value="formFields.time.initial"
-          >
+          <input type="hidden" name="time" :value="formFields.time.initial" />
         </template>
         <template v-if="formFields.phone">
-          <div class="form-group row d-none honigtopf">
-            <label
-              class="col-lg-3 col-form-label"
-              for="id_phone"
-            >
+          <div class="mb-3 row d-none honigtopf">
+            <label class="col-lg-3 col-form-label" for="id_phone">
               {{ formFields.phone.label }}
             </label>
             <div class="col-lg-9">
@@ -89,27 +79,23 @@
                 id="id_phone"
                 class="form-control"
                 type="text"
-                name="phone"
-              >
+                name="phone" />
             </div>
           </div>
         </template>
         <template v-if="formFields.test">
-          <div class="form-group row">
+          <div class="mb-3 row">
             <label
               class="col-lg-3 col-form-label"
-              :class="{ 'text-danger': errors.test, 'field-required': formFields.test.required}"
-              for="id_test"
-            >
+              :class="{
+                'text-danger': errors.test,
+                'field-required': formFields.test.required
+              }"
+              for="id_test">
               {{ formFields.test.label }}
             </label>
             <div class="col-lg-9">
-              <input
-                class="form-control"
-                type="text"
-                required
-                name="test"
-              >
+              <input class="form-control" type="text" required name="test" />
               <p class="help-block">
                 <span>{{ formFields.test.help_text }}</span>
               </p>
@@ -122,7 +108,6 @@
 </template>
 
 <script>
-
 import I18nMixin from '../../lib/i18n-mixin'
 
 export default {
@@ -144,15 +129,11 @@ export default {
     },
     initialEmail: {
       type: String,
-      default: '',
+      default: ''
     },
     initialAddress: {
       type: String,
-      default: '',
-    },
-    initialPrivate: {
-      type: Boolean,
-      default: false
+      default: ''
     },
     addressHelpText: {
       type: String,
@@ -161,49 +142,50 @@ export default {
     addressRequired: {
       type: Boolean,
       default: false
-    },
+    }
   },
-  data () {
+  data() {
     return {
       emailValue: this.initialEmail,
-      addressValue: this.initialAddress || (this.user && this.user.address) || '',
+      addressValue:
+        this.initialAddress || (this.user && this.user.address) || ''
     }
   },
   computed: {
-    formFields () {
+    formFields() {
       return this.form.fields
     },
-    errors () {
+    errors() {
       if (this.form) {
         return this.form.errors
       }
       return {}
     },
-    addressHelpTextValue () {
+    addressHelpTextValue() {
       if (this.addressHelpText !== null) {
         return this.addressHelpText
       }
       return this.formFields.address.help_text
     },
     email: {
-      get () {
+      get() {
         return this.emailValue
       },
-      set (value) {
+      set(value) {
         this.emailValue = value
         this.$emit('update:initialEmail', value)
       }
     },
     address: {
-      get () {
+      get() {
         return this.addressValue
       },
-      set (value) {
+      set(value) {
         this.addressValue = value
         this.$emit('update:initialAddress', value)
       }
     },
-    requiresPostalAddress () {
+    requiresPostalAddress() {
       if (this.addressRequired) {
         return true
       }
@@ -211,6 +193,12 @@ export default {
         return !this.defaultLaw.email_only
       }
       return true
+    },
+    isAllowedAddress() {
+      if (!this.address || !this.config.settings.address_regex) {
+        return true
+      }
+      return new RegExp(this.config.settings.address_regex).test(this.address)
     }
   }
 }

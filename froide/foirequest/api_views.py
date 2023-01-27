@@ -1,41 +1,36 @@
-from django.db.models import Q, Prefetch
 from django.contrib.auth import get_user_model
-
-from rest_framework import serializers, viewsets, mixins, status, throttling
-from rest_framework.response import Response
-from rest_framework.decorators import action
-
-from oauth2_provider.contrib.rest_framework import TokenHasScope
+from django.db.models import Prefetch, Q
 
 from django_filters import rest_framework as filters
+from oauth2_provider.contrib.rest_framework import TokenHasScope
+from rest_framework import mixins, serializers, status, throttling, viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from taggit.models import Tag
 
+from froide.campaign.models import Campaign
+from froide.document.api_views import DocumentSerializer
 from froide.helper.search.api_views import ESQueryMixin
 from froide.helper.text_diff import get_differences
 from froide.publicbody.api_views import (
     FoiLawSerializer,
-    SimplePublicBodySerializer,
     PublicBodySerializer,
+    SimplePublicBodySerializer,
 )
-
-from taggit.models import Tag
-
 from froide.publicbody.models import PublicBody
-from froide.campaign.models import Campaign
-from froide.document.api_views import DocumentSerializer
 
-from .models import FoiRequest, FoiMessage, FoiAttachment
-from .services import CreateRequestService
-from .validators import clean_reference
-from .utils import check_throttle
 from .auth import (
     can_read_foirequest_authenticated,
-    get_read_foirequest_queryset,
-    get_read_foimessage_queryset,
     get_read_foiattachment_queryset,
+    get_read_foimessage_queryset,
+    get_read_foirequest_queryset,
 )
 from .documents import FoiRequestDocument
 from .filters import FoiRequestFilterSet
-
+from .models import FoiAttachment, FoiMessage, FoiRequest
+from .services import CreateRequestService
+from .utils import check_throttle
+from .validators import clean_reference
 
 User = get_user_model()
 
@@ -222,12 +217,10 @@ class FoiMessageSerializer(serializers.HyperlinkedModelSerializer):
 
     def get_redacted_content(self, obj):
         request = self.context["request"]
-
-        if can_read_foirequest_authenticated(obj.request, request, allow_code=False):
-            show, hide = obj.plaintext, obj.plaintext_redacted
-        else:
-            show, hide = obj.plaintext_redacted, obj.plaintext
-        return list(get_differences(show, hide))
+        authenticated_read = can_read_foirequest_authenticated(
+            obj.request, request, allow_code=False
+        )
+        return obj.get_redacted_content(authenticated_read)
 
     def get_attachments(self, obj):
         if not hasattr(obj, "visible_attachments"):
@@ -268,6 +261,13 @@ def optimize_message_queryset(request, qs):
     )
 
 
+class TagListField(serializers.CharField):
+    child = serializers.CharField()
+
+    def to_representation(self, data):
+        return [t.name for t in data.all()]
+
+
 class FoiRequestListSerializer(serializers.HyperlinkedModelSerializer):
     resource_uri = serializers.HyperlinkedIdentityField(
         view_name="api:request-detail", lookup_field="pk"
@@ -289,6 +289,8 @@ class FoiRequestListSerializer(serializers.HyperlinkedModelSerializer):
     campaign = serializers.HyperlinkedRelatedField(
         read_only=True, view_name="api:campaign-detail", lookup_field="pk"
     )
+    tags = TagListField()
+    description = serializers.CharField(source="get_description")
 
     class Meta:
         model = FoiRequest
@@ -311,7 +313,7 @@ class FoiRequestListSerializer(serializers.HyperlinkedModelSerializer):
             "due_date",
             "resolved_on",
             "last_message",
-            "first_message",
+            "created_at",
             "status",
             "public_body",
             "resolution",
@@ -321,6 +323,7 @@ class FoiRequestListSerializer(serializers.HyperlinkedModelSerializer):
             "user",
             "project",
             "campaign",
+            "tags",
         )
 
     def get_user(self, obj):
@@ -381,6 +384,7 @@ class FoiRequestFilter(filters.FilterSet):
     user = filters.ModelChoiceFilter(queryset=filter_by_user_queryset)
     tags = filters.CharFilter(method="tag_filter")
     categories = filters.CharFilter(method="categories_filter")
+    classification = filters.CharFilter(method="classification_filter")
     reference = filters.CharFilter(method="reference_filter")
     follower = filters.ModelChoiceFilter(
         queryset=filter_by_authenticated_user_queryset, method="follower_filter"
@@ -393,12 +397,8 @@ class FoiRequestFilter(filters.FilterSet):
         lookup_expr="isnull",
         method="campaign_filter",
     )
-    first_message_after = filters.DateFilter(
-        field_name="first_message", lookup_expr="gte"
-    )
-    first_message_before = filters.DateFilter(
-        field_name="first_message", lookup_expr="lt"
-    )
+    created_at_after = filters.DateFilter(field_name="created_at", lookup_expr="gte")
+    created_at_before = filters.DateFilter(field_name="created_at", lookup_expr="lt")
     has_same = filters.BooleanFilter(
         field_name="same_as", lookup_expr="isnull", exclude=True
     )
@@ -428,6 +428,7 @@ class FoiRequestFilter(filters.FilterSet):
             "resolution",
             "status",
             "reference",
+            "classification",
             "public_body",
             "slug",
             "costs",
@@ -447,6 +448,13 @@ class FoiRequestFilter(filters.FilterSet):
         return queryset.filter(
             **{
                 "public_body__categories__name": value,
+            }
+        )
+
+    def classification_filter(self, queryset, name, value):
+        return queryset.filter(
+            **{
+                "public_body__classification__name": value,
             }
         )
 
@@ -530,7 +538,7 @@ class FoiRequestViewSet(
         if self.action == "retrieve":
             extras = ("law",)
         qs = qs.prefetch_related(
-            "public_body", "user", "public_body__jurisdiction", *extras
+            "public_body", "user", "tags", "public_body__jurisdiction", *extras
         )
         return qs
 
@@ -545,12 +553,19 @@ class FoiRequestViewSet(
         url_name="tags-autocomplete",
     )
     def tags_autocomplete(self, request):
-        query = request.GET.get("query", "")
-        tags = []
+        query = request.GET.get("q", "")
+        tags = Tag.objects.none()
         if query:
-            tags = Tag.objects.filter(name__istartswith=query)
-            tags = [t for t in tags.values_list("name", flat=True)]
-        return Response(tags)
+            tags = (
+                Tag.objects.filter(name__istartswith=query)
+                .only("name")
+                .order_by("name")
+            )
+
+        page = self.paginate_queryset(tags)
+        return self.get_paginated_response(
+            [{"value": t.name, "label": t.name} for t in page]
+        )
 
     @throttle_action((MakeRequestThrottle,))
     def create(self, request, *args, **kwargs):

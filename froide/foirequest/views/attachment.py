@@ -1,28 +1,33 @@
-import re
 import json
 import logging
+import re
+from functools import partial
 
+from django.contrib import messages
+from django.db import transaction
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import Http404, get_object_or_404, redirect, render
 from django.urls import reverse
-from django.shortcuts import render, get_object_or_404, Http404, redirect
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 from django.views.generic import DetailView
-from django.utils.translation import gettext as _
-from django.http import HttpResponse, JsonResponse
-from django.contrib import messages
-from django.templatetags.static import static
 
 from crossdomainmedia import CrossDomainMediaMixin
-from froide.helper.utils import render_400, render_403, is_ajax
 
-from ..models import FoiRequest, FoiMessage, FoiAttachment
+from froide.helper.utils import is_ajax, render_400, render_403
+
 from ..auth import (
-    get_accessible_attachment_url,
     AttachmentCrossDomainMediaAuth,
+    get_accessible_attachment_url,
     has_attachment_access,
 )
+from ..decorators import (
+    allow_moderate_pii_foirequest,
+    allow_write_foirequest,
+    allow_write_or_moderate_pii_foirequest,
+)
+from ..models import FoiAttachment, FoiMessage, FoiRequest
 from ..tasks import redact_attachment_task
-from ..decorators import allow_write_foirequest, allow_write_or_moderate_pii_foirequest
-
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +65,7 @@ def show_attachment(request, slug, message_id, attachment_name):
 
 
 @require_POST
-@allow_write_foirequest
+@allow_write_or_moderate_pii_foirequest
 def approve_attachment(request, foirequest, attachment_id):
     att = get_object_or_404(
         FoiAttachment, id=attachment_id, belongs_to__request=foirequest
@@ -71,7 +76,7 @@ def approve_attachment(request, foirequest, attachment_id):
     # hard guard against publishing of non publishable requests
     if not foirequest.not_publishable:
         att.approve_and_save()
-        att.attachment_published.send(
+        att.attachment_approved.send(
             sender=att,
             user=request.user,
         )
@@ -85,6 +90,31 @@ def approve_attachment(request, foirequest, attachment_id):
             )
         )
     messages.add_message(request, messages.SUCCESS, _("Attachment approved."))
+    return redirect(att.get_anchor_url())
+
+
+@require_POST
+@allow_moderate_pii_foirequest
+def mark_attachment_as_moderated(request, foirequest, attachment_id):
+    att = get_object_or_404(
+        FoiAttachment, id=attachment_id, belongs_to__request=foirequest
+    )
+
+    if not att.is_moderated:
+        att.is_moderated = True
+        att.save(update_fields=["is_moderated"])
+
+    if is_ajax(request):
+        if request.content_type == "application/json":
+            return JsonResponse({})
+        return HttpResponse(
+            '<div class="alert alert-success">{}</div>'.format(
+                _("Attachment has been marked as moderated.")
+            )
+        )
+    messages.add_message(
+        request, messages.SUCCESS, _("Attachment has been marked as moderated.")
+    )
     return redirect(att.get_anchor_url())
 
 
@@ -116,7 +146,7 @@ def delete_attachment(request, foirequest, attachment_id):
 
 
 @require_POST
-@allow_write_foirequest
+@allow_write_or_moderate_pii_foirequest
 def create_document(request, foirequest, attachment_id):
     att = get_object_or_404(
         FoiAttachment, id=attachment_id, belongs_to__request=foirequest
@@ -195,7 +225,6 @@ class AttachmentFileDetailView(CrossDomainMediaMixin, DetailView):
 
 def get_redact_context(foirequest, attachment):
     return {
-        "resources": {"pdfjsWorker": static("js/pdf.worker.min.js")},
         "urls": {
             "publishUrl": reverse(
                 "foirequest-approve_attachment",
@@ -247,6 +276,11 @@ def get_redact_context(foirequest, attachment):
             "hasPassword": _(
                 "The original document is protected with a password. The password is getting removed on publication."
             ),
+            "confirmNoRedactionTitle": _("Are you sure that no redaction is needed?"),
+            "confirmNoRedactionsText": _(
+                "You redacted parts of the document, but clicked that no redaction is needed. Are you sure that no redaction is needed?"
+            ),
+            "close": _("Close"),
         },
     }
 
@@ -306,7 +340,9 @@ def redact_attachment(request, foirequest, attachment_id):
             attachment.approved = False
             attachment.save()
 
-        redact_attachment_task.delay(attachment.id, att.id, instructions)
+        transaction.on_commit(
+            partial(redact_attachment_task.delay, attachment.id, att.id, instructions)
+        )
 
         att.attachment_redacted.send(
             sender=att,

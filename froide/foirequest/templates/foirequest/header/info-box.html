@@ -1,6 +1,7 @@
 {% load i18n %}
 {% load foirequest_tags %}
 {% load permission_helper %}
+{% load follow_tags %}
 
 {% comment %}
   Info box colors:
@@ -15,7 +16,7 @@
   class="info-box mb-3 info-box--{% if object.is_overdue or object.resolution == 'refused' %}danger{% elif object.status_is_final and object.is_successful or object.resolution == 'partially_successful' %}success{% else %}regular{% endif %}"
 >
 
-  <!-- header (status, status icon) -->
+  {# header (status, status icon) #}
   <div class="info-box__header d-flex flex-nowrap justify-content-between align-items-center">
     <div>
       <h3 class="h5 info-box__title">{{ object.readable_status }}</h3>
@@ -26,16 +27,16 @@
       </div>
     </div>
     {% if object.status_representation %}
-      <div class="info-box__icon ml-1 flex-shrink-0 status-{{ object.status_representation }}"></div>
+      <div class="info-box__icon ms-1 flex-shrink-0 status-{{ object.status_representation }}"></div>
     {% endif %}
   </div>
 
-  <!-- body  -->
+  {# body  #}
   <div class="info-box__body">
 
-    <!-- edit button -->
+    {# edit button #}
     {% if object.moderate_classification and object|can_moderate_foirequest:request or object|can_write_foirequest:request %}
-      <div id="set-status" class="bg-blue-10 px-4 py-2">
+      <div id="set-status" class="bg-blue-10 px-4 py-2 d-print-none">
         <a href="#" class="info-box__edit-button">
           <span class="{% if active_tab == 'set-status' %}d-none{% endif %}"><i class="fa fa-pencil" aria-hidden="true"></i> {% trans "Edit request status" %}</span>
           <span class="{% if active_tab != 'set-status' %}d-none{% endif %}"><i class="fa fa-long-arrow-left" aria-hidden="true"></i> {% trans "Back" %}</span>
@@ -48,13 +49,13 @@
 
       {% if not object.public and object.is_foi and object|can_write_foirequest:request %}
         <li class="info-box__list-item info-box__list-item--inset bg-yellow-10 d-flex my-0 py-2 border-top border-yellow-20 d-print-none">
-          <form class="form-inline disable-submit" data-confirm="{% translate 'Are you sure you want to publish this request?' %}" action="{% url 'foirequest-make_public' slug=object.slug %}" method="post">
+          <form class="disable-submit" data-confirm="{% translate 'Are you sure you want to publish this request?' %}" action="{% url 'foirequest-make_public' slug=object.slug %}" method="post">
             {% csrf_token %}
             <p>
               {% blocktrans %}This request is <strong>not public</strong>.{% endblocktrans %}
             </p>
-            <p class="m-2 text-right">
-              <button type="submit" class="btn ml-auto btn-success">{% blocktrans %}Make public{% endblocktrans %}</button>
+            <p class="m-2 text-end">
+              <button type="submit" class="btn ms-auto btn-success">{% blocktrans %}Make public{% endblocktrans %}</button>
             </p>
           </form>
         </li>
@@ -62,38 +63,40 @@
 
       {# Admin/moderation links #}
       {% if object|can_mark_not_foi:request %}
-        <li class="info-box__list-item info-box__list-item--inset bg-blue-10 d-flex my-0 border-top border-blue-20">
-
-          {% if request.user.is_staff and request.user|has_perm:"foirequest.view_foirequest" %}
-            <div class="align-self-center mr-1">
-              <a class="d-block" href="{% url 'admin:foirequest_foirequest_change' object.id %}">
-                <i class="fa fa-cog"></i>
-                {% trans "Admin" %}
-              </a>
-            </div>
-          {% endif %}
-
-          {% if not object.is_foi %}
-            <div class="smaller text-danger"><strong>{% trans "Marked as NOT FoI" %}</strong></div>
-          {% else %}
-            <form id="mark-not-foi-form" class="ajaxified" method="post" data-confirm="{% translate 'Mark as not an FOI request?' %}" action="{% url 'foirequest-mark_not_foi' slug=object.slug %}">
-              {% csrf_token %}
-              <button class="btn btn-link" type="submit">
-              <i class="fa fa-ban"></i>
-                {% trans "Not an FOI request" %}
-              </button>
-            </form>
-          {% endif %}
+        <li class="info-box__list-item info-box__list-item--inset bg-blue-200 d-flex my-0 border-top border-blue-20 py-2 d-print-none">
+          <ul class="list-inline">
+            {% if request.user.is_staff and request.user|has_perm:"foirequest.view_foirequest" %}
+              <li class="list-inline-item">
+                <a class="btn btn-link" href="{% url 'admin:foirequest_foirequest_change' object.id %}">
+                  <i class="fa fa-cog"></i>
+                  {% trans "Admin" %}
+                </a>
+              </li>
+            {% endif %}
+            {% if object|can_moderate_pii_foirequest:request %}
+              {% if not object.user.is_deleted and not object.user.is_trusted and object.user.is_active and not object.user.is_staff %}
+                <li class="list-inline-item">
+                  <a class="btn btn-link" href="{% url 'problem-user' pk=object.user.pk %}?request={{ object.id }}">
+                    <i class="fa fa-id-card-o"></i>
+                    {% trans "Account details" %}
+                  </a>
+                </li>
+              {% endif %}
+            {% endif %}
+            {% if not object.user.is_trusted and not object.user.is_staff %}
+              {% render_moderation_actions object %}
+            {% endif %}
+          </ul>
         </li>
       {% endif %}
 
-      <!-- date -->
+      {# date #}
       <li class="info-box__list-item">
         <div class="info-box__list-label">{% blocktrans %}Date{% endblocktrans %}</div>
-        <div class="info-box__list-value">{{ object.first_message|date:"j. F Y" }}</div>
+        <div class="info-box__list-value">{{ object.created_at|date:"j. F Y" }}</div>
       </li>
 
-      <!-- due date -->
+      {# due date #}
       <li id="due-date"
         class="info-box__list-item {% if object.is_overdue %}info-box__list-item--is-danger info-box__list-item--inset{% endif %}"
         {% if object.is_overdue %}
@@ -112,25 +115,25 @@
             {% if object|can_write_foirequest:request %}
               <a href="#" data-inlineedit="#request-duedate-form" data-inlineeditpresentation="#null">
                 <i class="fa fa-pencil" aria-hidden="true"></i>
-                <span class="sr-only">{% trans "Edit due date" %}</span>
+                <span class="visually-hidden">{% trans "Edit due date" %}</span>
               </a>
             {% endif %}
           </span>
           {% if object|can_write_foirequest:request %}
-            <div class="d-none" id="request-duedate-form">
+            <div class="d-none d-print-none" id="request-duedate-form">
               <small class="text-mute">
-                {% translate "Extend deadline by a number of months." %}
+                {% blocktranslate with unit=object.law.get_max_response_time_unit_display %}
+                  Extend deadline by a number of {{ unit }}.
+                {% endblocktranslate %}
               </small>
               <form class="disable-submit" method="post" action="{% url 'foirequest-extend_deadline' slug=object.slug %}">
                 {% csrf_token %}
                 <div class="input-group input-group-sm mb-1">
                   <input class="form-control" type="number" min="0" max="15" name="time" value="1">
-                  <div class="input-group-append">
-                    <span class="input-group-text">{{ object.law.get_max_response_time_unit_display }}</span>
-                    <button class="btn btn-sm btn-outline-secondary" type="submit">
-                      {% trans "Extend deadline" %}
-                    </button>
-                  </div>
+                  <span class="input-group-text">{{ object.law.get_max_response_time_unit_display }}</span>
+                  <button class="btn btn-sm btn-outline-secondary" type="submit">
+                    {% trans "Extend deadline" %}
+                  </button>
                 </div>
               </form>
             </div>
@@ -138,7 +141,7 @@
         </div>
       </li>
 
-      <!-- Costs -->
+      {# Costs #}
       {% if object.costs > 0 %}
         <li class="info-box__list-item">
           <div class="info-box__list-label">{% blocktrans %}Cost of information:{% endblocktrans %}</div>
@@ -146,37 +149,43 @@
             {{ object.costs|floatformat:2 }} {{ froide.currency }}
 
             {% if object|can_write_foirequest:request %}
-              <a href="#" class="info-box__edit-link">
+              <a href="#" class="info-box__edit-link d-print-none">
                 <i class="fa fa-pencil" aria-hidden="true"></i>
-                <span class="sr-only">{% trans "Edit costs" %}</span>
+                <span class="visually-hidden">{% trans "Edit costs" %}</span>
               </a>
             {% endif %}
           </div>
         </li>
       {% endif %}
 
-      <!-- follow request -->
+      {# follow request #}
       {% block followers %}
-        <li class="info-box__list-item info-box__list-item--has-divider">
-          {% include "foirequestfollower/show.html" %}
-        </li>
+        {% if object.is_public %}
+          <li class="info-box__list-item info-box__list-item--has-divider d-print-none">
+            {% show_follow "request" object %}
+          </li>
+        {% endif %}
       {% endblock followers %}
 
       {% if object.is_public %}
-        <li id="share-links" class="info-box__list-item info-box__list-item--has-divider">
+        <li id="share-links" class="info-box__list-item info-box__list-item--has-divider d-print-none">
 
-          <!-- copy url -->
+          {# copy url #}
           <div class="mb-2 mb-lg-3">
-            <a href="{{ object.get_absolute_domain_short_url }}" data-toggle="tooltip" title="{% trans 'Click to copy' %}" data-copied="{% trans 'URL copied' %}" class="copy-short-url-trigger">
+            <a href="{{ object.get_absolute_domain_short_url }}" data-bs-toggle="tooltip" title="{% trans 'Click to copy' %}" data-copied="{% trans 'URL copied' %}" class="copy-short-url-trigger">
               <i class="fa fa-copy" aria-hidden="true"></i>
               {% blocktrans %}Copy Short-URL{% endblocktrans %}
             </a>
           </div>
 
-          <!-- share links -->
+          {# share links #}
           {% block social_sharing %}
             <div>
-              {% translate "I made an #FOI request:" as social_text %}
+              {% if object.user == request.user %}
+                {% translate "I made an #FOI request:" as social_text %}
+              {% else %}
+                {% translate "Check out this #FOI request:" as social_text %}
+              {% endif %}
               <a href="https://twitter.com/share?text={{ social_text|urlencode }}&amp;url={{ object.get_absolute_domain_short_url|urlencode }}" target="_blank" rel="noopener">
                 <i class="fa fa-twitter" aria-hidden="true"></i>
                 {% trans "Tweet request" %}
@@ -191,16 +200,18 @@
         </li>
       {% endif %}
 
-      <!-- rss/download links -->
-      <li id="download-links" class="info-box__list-item">
+      {# rss/download links #}
+      <li id="download-links" class="info-box__list-item d-print-none">
         <div class="d-flex justify-content-between">
-          <a href="{% url 'foirequest-feed' slug=object.slug %}">
-            <i class="fa fa-rss" aria-hidden="true"></i>
-            {% trans "RSS Feed" %}
-          </a>
+          {% if object.public %}
+            <a href="{% url 'foirequest-feed' slug=object.slug %}">
+              <i class="fa fa-rss" aria-hidden="true"></i>
+              {% trans "RSS Feed" %}
+            </a>
+          {% endif %}
           {% if object|can_read_foirequest_authenticated:request %}
             <div class="dropdown">
-              <button id="downloadActions" type="button" class="btn btn-link mt-n2 dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+              <button id="downloadActions" type="button" class="btn btn-link mt-n2 dropdown-toggle" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                 {% trans 'Download' %}
               </button>
               <div class="dropdown-menu alpha-dropdown-menu" aria-labelledby="downloadActions">
@@ -223,16 +234,16 @@
     {# edit interface #}
     {% if object.moderate_classification and object|can_moderate_foirequest:request or object|can_write_foirequest:request %}
       <div class="info-box__edit-panel px-4 mt-2 mb-4 {% if active_tab != 'set-status' %}d-none{% endif %}">
-        <form class="form-horizontal disable-submit" method="post" action="{% url 'foirequest-set_status' slug=object.slug %}#set-status">
+        <form class="disable-submit" method="post" action="{% url 'foirequest-set_status' slug=object.slug %}#set-status">
           {% csrf_token %}
           {% if status_form %}
-            {% include "foirequest/header/_set_status.html" %}
+            {% include "foirequest/header/_set_status.html" with status_form=status_form inline=True %}
           {% else %}
             {% with status_form=object.get_status_form %}
-              {% include "foirequest/header/_set_status.html" %}
+              {% include "foirequest/header/_set_status.html" with status_form=status_form inline=True %}
             {% endwith %}
           {% endif %}
-          <button class="btn btn-primary" type="submit">{% blocktrans %}Set status{% endblocktrans %}</button>
+          <button class="btn btn-primary" id="set-status-submit" type="submit">{% blocktrans %}Set status{% endblocktrans %}</button>
         </form>
       </div>
     {% endif %}

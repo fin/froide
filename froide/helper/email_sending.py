@@ -1,10 +1,10 @@
-from collections import namedtuple
 import logging
+from collections import namedtuple
 
-from django.core.mail import EmailMessage, EmailMultiAlternatives, get_connection
-from django.template.loader import render_to_string, select_template
-from django.template import TemplateDoesNotExist
 from django.conf import settings
+from django.core.mail import EmailMessage, EmailMultiAlternatives, get_connection
+from django.template import TemplateDoesNotExist
+from django.template.loader import render_to_string, select_template
 
 try:
     from froide.bounce.utils import make_bounce_address, make_unsubscribe_header
@@ -187,7 +187,7 @@ class MailIntent:
         )
 
         if email_content_templates.subject:
-            subject = email_content_templates.subject.render(context)
+            subject = email_content_templates.subject.render(context).strip()
         text = email_content_templates.text.render(context)
         html = None
         if email_content_templates.html is not None:
@@ -273,6 +273,8 @@ def send_mail(
     email_address,
     html=None,
     from_email=None,
+    cc=None,
+    bcc=None,
     attachments=None,
     fail_silently=False,
     bounce_check=True,
@@ -320,10 +322,12 @@ def send_mail(
         email_klass = EmailMultiAlternatives
 
     email = email_klass(
-        subject,
-        body,
-        from_email,
-        [email_address],
+        subject=subject,
+        body=body,
+        from_email=from_email,
+        to=[email_address],
+        cc=cc,
+        bcc=bcc,
         connection=connection,
         headers=headers,
     )

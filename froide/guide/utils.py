@@ -1,15 +1,16 @@
-from collections import namedtuple, defaultdict
 import re
+from collections import defaultdict, namedtuple
+from typing import Any, Iterator, List, Optional, Set, Tuple
 
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
-from froide.helper.text_utils import split_text_by_separator
+from froide.foirequest.models.message import FoiMessage
 from froide.helper.admin_utils import make_choose_object_action
 from froide.helper.email_sending import mail_registry
+from froide.helper.text_utils import split_text_by_separator
 
-from .models import Rule, Guidance, Action
-
+from .models import Action, Guidance, Rule
 
 guidance_notification_mail = mail_registry.register(
     "guide/emails/new_guidance",
@@ -28,21 +29,23 @@ GuidanceResult = namedtuple(
 
 WS = re.compile(r"\s+")
 
+RuleMatch = Optional[Tuple[Optional[re.Match], Optional[re.Match]]]
 
-def prepare_text(text):
+
+def prepare_text(text: str) -> str:
     text, _1 = split_text_by_separator(text)
     text = " ".join(text.splitlines())
     return text
 
 
 class GuidanceApplicator:
-    def __init__(self, message, active_only=True):
+    def __init__(self, message: FoiMessage, active_only: bool = True) -> None:
         self.message = message
         self.created_count = 0
         self.deleted_count = 0
         self.active_only = active_only
 
-    def filter_rules(self, rules=None):
+    def filter_rules(self, rules: None = None) -> None:
         foirequest = self.message.request
         if rules is None:
             rules = Rule.objects.all()
@@ -67,10 +70,28 @@ class GuidanceApplicator:
                     continue
             yield rule
 
-    def apply_rules(self):
+    def apply_rules(self) -> List[Any]:
         return list(self.apply_rules_generator())
 
-    def apply_rules_generator(self):
+    def match_rule(self, rule: Rule, tags: Set[int], text: str) -> RuleMatch:
+        if rule.has_tag_id and rule.has_tag_id not in tags:
+            return
+        if rule.has_no_tag_id and rule.has_no_tag_id in tags:
+            return
+
+        include_match = None
+        if rule.includes_re:
+            include_match = rule.includes_re.search(text)
+            if include_match is None:
+                return
+        exclude_match = None
+        if rule.excludes_re:
+            exclude_match = rule.excludes_re.search(text)
+            if exclude_match is not None:
+                return
+        return (include_match, exclude_match)
+
+    def apply_rules_generator(self) -> Iterator[Guidance]:
         rules = self.filter_rules()
 
         message = self.message
@@ -78,22 +99,10 @@ class GuidanceApplicator:
         text = prepare_text(message.plaintext)
 
         for rule in rules:
-            if rule.has_tag_id and rule.has_tag_id not in tags:
+            result = self.match_rule(rule, tags, text)
+            if not result:
                 continue
-            if rule.has_no_tag_id and rule.has_no_tag_id in tags:
-                continue
-
-            include_match = None
-            if rule.includes_re:
-                include_match = rule.includes_re.search(text)
-                if include_match is None:
-                    continue
-            exclude_match = None
-            if rule.excludes_re:
-                exclude_match = rule.excludes_re.search(text)
-                if exclude_match is not None:
-                    continue
-
+            include_match, exclude_match = result
             # Rule applies
             ctx = {"includes": include_match, "excludes": exclude_match, "tags": tags}
             yield from self.apply_rule(rule, **ctx)
@@ -125,7 +134,7 @@ class GuidanceApplicator:
             self.created_count += 1
         return guidance
 
-    def run(self):
+    def run(self) -> GuidanceResult:
         guidances = self.apply_rules()
 
         # Delete all guidances that were there before
@@ -140,7 +149,9 @@ class GuidanceApplicator:
         return GuidanceResult(guidances, self.created_count, self.deleted_count)
 
 
-def run_guidance(message, active_only=True, notify=False):
+def run_guidance(
+    message: FoiMessage, active_only: bool = True, notify: bool = False
+) -> GuidanceResult:
     if not message.is_response:
         return
 

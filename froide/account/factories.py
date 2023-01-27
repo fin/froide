@@ -1,7 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from django.contrib.auth import get_user_model
-from django.utils import timezone
 
 import factory
 from factory.django import DjangoModelFactory
@@ -23,5 +22,5 @@ class UserFactory(DjangoModelFactory):
     date_joined = datetime(1999, 1, 1).replace(tzinfo=timezone.utc)
     private = False
     address = "Dummystreet5\n12345 Town"
-    organization = ""
+    organization_name = ""
     organization_url = ""

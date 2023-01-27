@@ -1,25 +1,22 @@
-from collections import OrderedDict
 import datetime
+from collections import OrderedDict
 
-from django.db import models
-from django.conf import settings
 from django import forms
-from django.utils.translation import gettext_lazy as _
-from django.core.exceptions import PermissionDenied
-from django.template.response import TemplateResponse
+from django.conf import settings
 from django.contrib import admin
 from django.contrib.admin.filters import SimpleListFilter
-from django.contrib.admin.utils import get_model_from_relation
-from django.contrib.admin.widgets import AdminDateWidget
 from django.contrib.admin.options import IncorrectLookupParameters
-from django.contrib.admin.utils import prepare_lookup_value
-from django.core.exceptions import ValidationError
-from django.utils.translation import get_language_bidi
-from django.utils.encoding import smart_str
-from django.utils import timezone
+from django.contrib.admin.utils import get_model_from_relation, prepare_lookup_value
+from django.contrib.admin.widgets import AdminDateWidget
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import models
 from django.db.models.fields.related import ForeignObjectRel, ManyToManyField
+from django.template.response import TemplateResponse
+from django.utils import timezone
+from django.utils.encoding import smart_str
+from django.utils.translation import get_language_bidi
+from django.utils.translation import gettext_lazy as _
 
-import pytz
 from taggit.models import TaggedItem
 
 from .forms import TagObjectForm, get_fake_fk_form_class
@@ -33,28 +30,28 @@ def make_choose_object_action(model_or_queryset, callback, label):
         filter_qs = model_or_queryset
         model = model_or_queryset.model
 
-    def action(self, request, queryset):
+    def action(model_admin, request, queryset):
         # Check that the user has change permission for the actual model
-        if not self.has_change_permission(request):
+        if not model_admin.has_change_permission(request):
             raise PermissionDenied
 
-        Form = get_fake_fk_form_class(model, self.admin_site, queryset=filter_qs)
+        Form = get_fake_fk_form_class(model, model_admin.admin_site, queryset=filter_qs)
         # User has already chosen the other req
         if request.POST.get("obj"):
             form = Form(request.POST)
             if form.is_valid():
                 action_obj = form.cleaned_data["obj"]
-                callback(self, request, queryset, action_obj)
-                self.message_user(request, _("Successfully executed."))
+                callback(model_admin, request, queryset, action_obj)
+                model_admin.message_user(request, _("Successfully executed."))
                 return None
         else:
             form = Form()
 
-        opts = self.model._meta
+        opts = model_admin.model._meta
         context = {
             "opts": opts,
             "queryset": queryset,
-            "media": self.media,
+            "media": model_admin.media,
             "action_checkbox_name": admin.helpers.ACTION_CHECKBOX_NAME,
             "form": form,
             "headline": label,
@@ -537,13 +534,12 @@ class DateRangeFilter(admin.filters.SimpleListFilter):
         return timezone.get_default_timezone()
 
     @staticmethod
-    def make_dt_aware(value, timezone):
-        if settings.USE_TZ and pytz is not None:
-            default_tz = timezone
-            if value.tzinfo is not None:
-                value = default_tz.normalize(value)
+    def make_dt_aware(value: datetime.datetime, tzinfo):
+        if settings.USE_TZ:
+            if timezone.is_aware(value):
+                value = timezone.localtime(value, timezone=tzinfo)
             else:
-                value = default_tz.localize(value)
+                value = value.replace(tzinfo=tzinfo)
         return value
 
     def choices(self, changelist):

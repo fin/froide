@@ -2,20 +2,19 @@ import os
 import unittest
 from datetime import datetime, timedelta
 
-from django.test import TestCase
 from django.db import connection
+from django.test import TestCase
 
-from froide.helper.email_parsing import parse_email
 from froide.foirequest.tests.factories import UserFactory
+from froide.helper.email_parsing import EmailAddress, parse_email
 
 from .models import Bounce
 from .utils import (
-    make_bounce_address,
     add_bounce_mail,
-    get_recipient_address_from_bounce,
     check_deactivation_condition,
+    get_recipient_address_from_bounce,
+    make_bounce_address,
 )
-
 
 TEST_DATA_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "testdata"))
 
@@ -42,7 +41,7 @@ class BounceTest(TestCase):
             email = parse_email(f)
 
         bounce_address = make_bounce_address(self.email)
-        email.to = [("", bounce_address)]
+        email.to = [EmailAddress("", bounce_address)]
         bounce_info = email.bounce_info
         self.assertTrue(bounce_info.is_bounce)
         self.assertEqual(bounce_info.bounce_type, "hard")
@@ -58,7 +57,7 @@ class BounceTest(TestCase):
             email = parse_email(f)
 
         bounce_address = make_bounce_address(self.email)
-        email.to = [("", bounce_address)]
+        email.to = [EmailAddress("", bounce_address)]
         bounce_info = email.bounce_info
         self.assertTrue(bounce_info.is_bounce)
         self.assertEqual(bounce_info.bounce_type, "hard")

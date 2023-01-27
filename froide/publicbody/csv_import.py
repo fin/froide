@@ -1,18 +1,18 @@
 import csv
-from io import BytesIO, StringIO
 import json
+from io import BytesIO, StringIO
+
+from django.contrib.auth import get_user_model
+from django.contrib.gis.geos import Point
+from django.contrib.sites.models import Site
+from django.utils import timezone
+from django.utils.translation import gettext as _
 
 import requests
 
-from django.contrib.auth import get_user_model
-from django.contrib.sites.models import Site
-from django.template.defaultfilters import slugify
-from django.utils import timezone
-from django.utils.translation import gettext as _
-from django.contrib.gis.geos import Point
-
-from froide.publicbody.models import PublicBody, Jurisdiction, Classification, Category
 from froide.georegion.models import GeoRegion
+from froide.helper.text_utils import slugify
+from froide.publicbody.models import Category, Classification, Jurisdiction, PublicBody
 
 User = get_user_model()
 
@@ -141,7 +141,7 @@ class CSVImporter(object):
             if regions:
                 pb.regions.set(regions)
             if categories:
-                pb.categories.set(*categories)
+                pb.categories.set(categories)
             return pb
         except PublicBody.DoesNotExist:
             pass
@@ -159,7 +159,7 @@ class CSVImporter(object):
         if regions:
             pb.regions.set(regions)
         if categories:
-            pb.categories.set(*categories)
+            pb.categories.set(categories)
         return pb
 
     def get_jurisdiction(self, slug):

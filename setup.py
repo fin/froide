@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 
 import codecs
-import re
 import os
+import re
 
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 
 def read(*parts):
@@ -22,7 +22,7 @@ def find_version(*file_paths):
 
 
 extras = {
-    "lint": ["flake8"],
+    "lint": ["flake8", "black", "isort", "flake8-bugbear"],
 }
 
 setup(
@@ -43,7 +43,6 @@ setup(
         "geoip2",
         "django-elasticsearch-dsl",
         "django-taggit",
-        "pytz",
         "requests",
         "python-magic",
         "djangorestframework",
@@ -54,11 +53,13 @@ setup(
         "django-crossdomainmedia",
         "django-storages",
         "dj-database-url",
-        "django-cache-url",
         "django-filter",
         "phonenumbers",
+        "pygtail",
         "django-filingcabinet",
         "icalendar",
+        "easy-thumbnails",
+        "drf-spectacular[sidecar]",
     ],
     extras_require=extras,
     include_package_data=True,

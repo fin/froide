@@ -1,15 +1,3 @@
-.nav-compact > li > a{
-  padding: 2px 15px !important;
-}
-
-.nav-compact .nav-header {
-  padding-top: 15px;
-}
-
-.nav-compact .nav-link.active {
-  font-weight: bold;
-}
-
 .navbar-brand-name {
   display: inline-block;
   transform: translateY(11px);
@@ -37,7 +25,7 @@
 }
 
 .navbar .nav > li > a:hover {
-    color: #06C;
+  color: #06c;
 }
 
 .navbar-secondary {
@@ -55,7 +43,6 @@
 }
 
 @include media-breakpoint-up(md) {
-
   .navbar-nav-secondary {
     padding-bottom: $spacer;
     width: 100%;
@@ -88,10 +75,10 @@
   background-color: transparent !important;
 
   .account-name {
-      float: left;
-      font-size: 60%;
-      margin: 2px 0 0 5px;
-      line-height: 110%;
+    float: left;
+    font-size: 60%;
+    margin: 2px 0 0 5px;
+    line-height: 110%;
   }
 }
 
@@ -108,5 +95,4 @@
   .dropdown-item {
     padding: 0.25rem 0;
   }
-
 }

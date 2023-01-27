@@ -1,14 +1,13 @@
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
+from django.contrib.contenttypes.models import ContentType
+from django.core import mail
 from django.test import TestCase
 from django.urls import reverse
-from django.contrib.auth import get_user_model
-from django.core import mail
-from django.contrib.contenttypes.models import ContentType
-from django.contrib.auth.models import Permission
 
-from froide.publicbody.models import PublicBody
-from froide.foirequest.tests import factories
 from froide.foirequest.models import FoiProject, FoiRequest
-
+from froide.foirequest.tests import factories
+from froide.publicbody.models import PublicBody
 
 User = get_user_model()
 
@@ -40,7 +39,8 @@ class RequestProjectTest(TestCase):
             "publicbody": pb_ids.split("+"),
         }
         mail.outbox = []
-        response = self.client.post(reverse("foirequest-make_request"), data)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(reverse("foirequest-make_request"), data)
         self.assertEqual(response.status_code, 302)
         project = FoiProject.objects.get(title=data["subject"])
         self.assertEqual(
@@ -80,7 +80,8 @@ class RequestProjectTest(TestCase):
             "publicbody": pb_ids,
             "full_text": "on",
         }
-        response = self.client.post(reverse("foirequest-make_request"), data)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(reverse("foirequest-make_request"), data)
         self.assertEqual(response.status_code, 302)
         project = FoiProject.objects.get(title=data["subject"])
         requests = project.foirequest_set.all()
@@ -128,7 +129,8 @@ class RequestProjectTest(TestCase):
         draft.project = None
         draft.save()
 
-        response = self.client.post(request_url, data)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(request_url, data)
         self.assertEqual(response.status_code, 302)
 
         project = FoiProject.objects.get(title=data["subject"])

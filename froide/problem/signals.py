@@ -3,13 +3,13 @@ from django.dispatch import receiver
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
-from froide.foirequest.models import FoiRequest
+from froide.foirequest.models import FoiAttachment, FoiRequest
 from froide.publicbody.models import PublicBody
 
-from .models import reported, claimed, unclaimed, escalated, resolved
-from .utils import inform_managers
-from .consumers import PRESENCE_ROOM
 from .api_views import ProblemReportSerializer
+from .consumers import PRESENCE_ROOM
+from .models import claimed, escalated, reported, resolved, unclaimed
+from .utils import inform_managers
 
 
 @receiver(reported, dispatch_uid="report_problem_reported")
@@ -93,6 +93,15 @@ def _get_unclassified_data(fr):
     }
 
 
+def _get_attachment_data(att):
+    return {
+        "name": att.name,
+        "id": att.id,
+        "belongs_to_id": att.belongs_to_id,
+        "belongs_to__request__slug": att.belongs_to.request.slug,
+    }
+
+
 @receiver(FoiRequest.status_changed, dispatch_uid="unclassified_status_changed")
 def broadcast_unclassified_changed(sender, **kwargs):
     prev = kwargs.get("previous_status")
@@ -102,6 +111,15 @@ def broadcast_unclassified_changed(sender, **kwargs):
         return
     broadcast_moderation(
         "unclassified_removed", _get_unclassified_data(sender), key="unclassified"
+    )
+
+
+@receiver(
+    FoiAttachment.attachment_approved, dispatch_uid="moderation_attachment_approved"
+)
+def broadcast_attachment_approved(sender, **kwargs):
+    broadcast_moderation(
+        "attachment_approved", _get_attachment_data(sender), key="attachments"
     )
 
 

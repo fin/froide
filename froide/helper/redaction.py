@@ -6,26 +6,23 @@ import shutil
 import tempfile
 import zlib
 
-from PyPDF2 import PdfFileReader, PdfFileWriter
-from PyPDF2.utils import PdfReadError
-
-from reportlab.pdfgen import canvas
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib.utils import ImageReader
-from reportlab.pdfbase import pdfmetrics
 import PIL.Image as PILImage
-
-from wand.image import Image
-from wand.drawing import Drawing
-from wand.color import Color
-from wand.exceptions import DelegateError, WandError
-
 from filingcabinet.pdf_utils import (
     decrypt_pdf_in_place,
-    rewrite_pdf_in_place,
+    get_images_from_pdf,
     rewrite_hard_pdf_in_place,
-    get_images_from_pdf_chunked,
+    rewrite_pdf_in_place,
 )
+from PyPDF2 import PdfFileReader, PdfFileWriter
+from PyPDF2.errors import PdfReadError
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas
+from wand.color import Color
+from wand.drawing import Drawing
+from wand.exceptions import DelegateError, WandError
+from wand.image import Image
 
 logger = logging.getLogger(__name__)
 
@@ -130,10 +127,7 @@ def _redact_file(pdf_file, outpath, instructions, tries=0):
         for page_idx, instr in enumerate(page_instructions)
         if instr["rects"]
     ]
-    CHUNK_SIZE = 5
-    image_generator = get_images_from_pdf_chunked(
-        pdf_file.name, page_image_numbers, CHUNK_SIZE
-    )
+    image_generator = get_images_from_pdf(pdf_reader, pdf_file.name, page_image_numbers)
 
     def get_page_iterator(page_instructions, image_generator):
         for page_idx, instr in enumerate(page_instructions):

@@ -1,25 +1,29 @@
+from typing import List
+
+from django import forms
 from django.conf import settings
 from django.urls import reverse_lazy
-from django.utils.translation import gettext_lazy as _
-from django.utils.safestring import mark_safe
-from django.utils.html import escape
 from django.utils import timezone
+from django.utils.html import escape
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.template.defaultfilters import slugify
-from django import forms
+from django.utils.safestring import mark_safe
+from django.utils.translation import gettext_lazy as _
 
+from taggit.forms import TagField
+
+from froide.campaign.validators import validate_not_campaign
+from froide.helper.auth import get_read_queryset
+from froide.helper.form_utils import JSONMixin
+from froide.helper.forms import TagObjectForm
+from froide.helper.text_utils import redact_plaintext, slugify
+from froide.helper.widgets import BootstrapRadioSelect, BootstrapSelect, PriceInput
 from froide.publicbody.models import PublicBody
 from froide.publicbody.widgets import PublicBodySelect
-from froide.helper.widgets import PriceInput, BootstrapRadioSelect
-from froide.helper.forms import TagObjectForm
-from froide.helper.form_utils import JSONMixin
-from froide.helper.text_utils import redact_plaintext
-from froide.helper.auth import get_read_queryset
-from froide.campaign.validators import validate_not_campaign
 
-from ..models import FoiRequest, RequestDraft, PublicBodySuggestion
-from ..validators import clean_reference, validate_no_placeholder
+from ..models import FoiRequest, PublicBodySuggestion, RequestDraft
+from ..moderation import get_moderation_triggers
 from ..utils import construct_initial_message_body
+from ..validators import clean_reference, validate_no_placeholder
 
 payment_possible = settings.FROIDE_CONFIG.get("payment_possible", False)
 
@@ -85,6 +89,7 @@ class RequestForm(JSONMixin, forms.Form):
     draft = forms.ModelChoiceField(
         queryset=None, required=False, widget=forms.HiddenInput
     )
+    tags = TagField(required=False, widget=forms.HiddenInput)
     language = forms.ChoiceField(
         choices=settings.LANGUAGES,
         initial=settings.LANGUAGE_CODE,
@@ -142,7 +147,7 @@ class RequestForm(JSONMixin, forms.Form):
 class MakePublicBodySuggestionForm(forms.Form):
     publicbody = forms.ModelChoiceField(
         label=_("Public body"),
-        queryset=PublicBody.objects.all(),
+        queryset=None,
         widget=PublicBodySelect,
     )
     reason = forms.CharField(
@@ -150,6 +155,10 @@ class MakePublicBodySuggestionForm(forms.Form):
         widget=forms.TextInput(attrs={"size": "40", "placeholder": _("Reason")}),
         required=False,
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["publicbody"].queryset = PublicBody.objects.all()
 
     def clean_publicbody(self):
         publicbody = self.cleaned_data["publicbody"]
@@ -261,7 +270,7 @@ class FoiRequestStatusForm(forms.Form):
         label=_("Resolution"),
         choices=[("", _("No outcome yet"))] + FoiRequest.RESOLUTION.choices,
         required=False,
-        widget=forms.Select(attrs={"class": "form-control"}),
+        widget=BootstrapSelect,
         help_text=_("How would you describe the current outcome of this request?"),
     )
     if payment_possible:
@@ -287,9 +296,10 @@ class FoiRequestStatusForm(forms.Form):
             label=_("Refusal Reason"),
             choices=[("", _("No or other reason given"))] + refusal_choices,
             required=False,
-            widget=forms.Select(attrs={"class": "form-control"}),
+            widget=BootstrapSelect,
             help_text=_(
-                "When you are (partially) denied access to information, the Public Body should always state the reason."
+                "When you are (partially) denied access to information, "
+                "the Public Body should always state the reason."
             ),
         )
 
@@ -353,20 +363,26 @@ class ConcreteLawForm(forms.Form):
         foirequest = kwargs.pop("foirequest")
         super().__init__(*args, **kwargs)
         self.foirequest = foirequest
-        self.possible_laws = foirequest.law.combined.all()
+        if foirequest.law and foirequest.law.meta:
+            self.possible_laws = foirequest.law.combined.all()
+        elif foirequest.public_body:
+            self.possible_laws = foirequest.public_body.laws.all().filter(meta=False)
+        elif foirequest.law:
+            self.possible_laws = [foirequest.law]
+        else:
+            self.possible_laws = []
         self.fields["law"] = forms.TypedChoiceField(
-            label=_("Information Law"),
+            label=_("Law"),
             choices=(
-                [("", "-------")]
-                + list(map(lambda x: (x.pk, x.name), self.possible_laws))
+                [("", "-------")] + [(law.pk, law.name) for law in self.possible_laws]
             ),
             coerce=int,
             empty_value="",
+            initial=foirequest.law.pk if foirequest.law else None,
+            widget=BootstrapSelect,
         )
 
     def clean(self):
-        if self.foirequest.law is None or not self.foirequest.law.meta:
-            raise forms.ValidationError(_("Invalid FoI Request for this operation"))
         indexed_laws = dict([(law.pk, law) for law in self.possible_laws])
         if "law" not in self.cleaned_data:
             return
@@ -385,6 +401,14 @@ class ConcreteLawForm(forms.Form):
 class TagFoiRequestForm(TagObjectForm):
     tags_autocomplete_url = reverse_lazy("api:request-tags-autocomplete")
 
+    def clean_tags(self):
+        """
+        Remove special tags starting with tag's INTERNAL_PREFIX
+        """
+        tags = self.cleaned_data["tags"]
+        tags = [t for t in tags if not t.startswith(FoiRequest.tags.INTERNAL_PREFIX)]
+        return tags
+
 
 class ExtendDeadlineForm(forms.Form):
     time = forms.IntegerField(min_value=1, max_value=15)
@@ -398,3 +422,26 @@ class ExtendDeadlineForm(forms.Form):
         if foirequest.due_date > now and foirequest.status == "overdue":
             foirequest.status = "awaiting_response"
         foirequest.save()
+
+
+class ApplyModerationForm(forms.Form):
+    moderation_trigger = forms.ChoiceField(required=True, widget=forms.HiddenInput)
+
+    def __init__(self, *args, **kwargs):
+        self.foirequest = kwargs.pop("foirequest")
+        self.request = kwargs.pop("request")
+        super().__init__(*args, **kwargs)
+        self.moderation_triggers = get_moderation_triggers(
+            self.foirequest, self.request
+        )
+        self.fields["moderation_trigger"].choices = [
+            (name, name) for name in self.moderation_triggers.keys()
+        ]
+
+    def save(self) -> List[str]:
+        trigger_name = self.cleaned_data["moderation_trigger"]
+        trigger = self.moderation_triggers[trigger_name]
+        messages = [
+            m for m in trigger.apply_actions(self.foirequest, self.request) if m
+        ]
+        return messages

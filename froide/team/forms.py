@@ -1,10 +1,13 @@
-from django.utils.translation import gettext_lazy as _
+from django import forms
 from django.db import transaction
 from django.db.models import Q
-from django import forms
+from django.utils.translation import gettext_lazy as _
 
-from .services import TeamService
+from froide.foirequest.models import FoiProject, FoiRequest
+from froide.helper.widgets import BootstrapSelect
+
 from .models import Team, TeamMembership
+from .services import TeamService
 
 
 class CreateTeamForm(forms.Form):
@@ -20,14 +23,18 @@ class CreateTeamForm(forms.Form):
             TeamMembership.objects.create(
                 team=team,
                 user=user,
-                role=TeamMembership.ROLE_OWNER,
-                status=TeamMembership.MEMBERSHIP_STATUS_ACTIVE,
+                role=TeamMembership.ROLE.OWNER,
+                status=TeamMembership.MEMBERSHIP_STATUS.ACTIVE,
             )
         return team
 
 
 class TeamMemberChangeRoleForm(forms.Form):
-    role = forms.ChoiceField(choices=TeamMembership.ROLES, label="")
+    role = forms.ChoiceField(
+        choices=TeamMembership.ROLE.choices,
+        label="",
+        widget=BootstrapSelect,
+    )
 
     def __init__(self, *args, **kwargs):
         self.owner = kwargs.pop("owner")
@@ -76,8 +83,8 @@ class TeamInviteForm(forms.Form):
         member = TeamMembership.objects.create(
             team=self.team,
             email=email,
-            role=TeamMembership.ROLE_VIEWER,
-            status=TeamMembership.MEMBERSHIP_STATUS_INVITED,
+            role=TeamMembership.ROLE.VIEWER,
+            status=TeamMembership.MEMBERSHIP_STATUS.INVITED,
         )
         service = TeamService(member)
         service.send_team_invite(user)
@@ -85,7 +92,7 @@ class TeamInviteForm(forms.Form):
 
 
 class AssignTeamForm(forms.Form):
-    team = forms.ModelChoiceField(queryset=None)
+    team = forms.ModelChoiceField(queryset=None, widget=BootstrapSelect)
 
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop("user")
@@ -100,4 +107,8 @@ class AssignTeamForm(forms.Form):
         team = self.cleaned_data["team"]
         self.instance.team = team
         self.instance.save()
+
+        if isinstance(self.instance, FoiProject):
+            FoiRequest.objects.filter(project=self.instance).update(team=team)
+
         return self.instance

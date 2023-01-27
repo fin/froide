@@ -5,6 +5,9 @@
 {% load searchtags %}
 {% load block_helper %}
 {% load form_helper %}
+{% load frontendbuild %}
+
+{% block title %}{% trans "Make a Freedom of Information request" %} - {{ SITE_NAME }}{% endblock %}
 
 {% block foisite_advice %}
   {% include "foisite/banner.html" %}
@@ -24,9 +27,9 @@
       <div class="bg-light">
         <div class="container pb-4 pt-3">
           <h3 class="text-center mb-3">{% trans "Join our current FOI campaigns" %}</h3>
-          <div class="row justify-content-center">
+          <div class="row justify-content-center text-center">
             {% for campaign in campaigns %}
-              <div class="col-auto">
+              <div class="col-auto mb-4">
                 <h4>{{ campaign.name }}</h4>
                 <a href="{{ campaign.url }}" class="btn btn-primary">
                   {% trans "Make a request" %}
@@ -43,6 +46,7 @@
 
     {% csrf_token %}
     {{ request_form.reference }}
+    {{ request_form.tags }}
     {{ request_form.draft }}
     {{ request_form.language }}
     {{ request_form.redirect_url }}
@@ -99,7 +103,7 @@
           {% blocktrans %}Write the request{% endblocktrans %}
         </legend>
 
-        <div slot="request-hints" class="">
+        <div slot="request-hints">
           <div class="request-hints">
             <h6>
               {% blocktrans %}Important Notes:{% endblocktrans %}
@@ -161,18 +165,6 @@
 
     {% block after_form %}{% endblock %}
 
-{% addtoblock "js" %}
-  <script src="{% static 'js/common.js' %}"></script>
-{% endaddtoblock %}
-{% addtoblock "js" %}
-  <script src="{% static 'js/makerequest.js' %}" charset="utf-8"></script>
-{% endaddtoblock %}
-
-{% addtoblock "css" %}
-  <link rel="stylesheet" href="{% static 'css/common.css' %}"/>
-{% endaddtoblock %}
-{% addtoblock "css" %}
-  <link rel="stylesheet" href="{% static 'css/makerequest.css' %}">
-{% endaddtoblock %}
+  {% addfrontendbuild "makerequest.js" %}
 
 {% endblock %}

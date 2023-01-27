@@ -1,49 +1,49 @@
-from django.urls import include, path, reverse
-from django.conf.urls.static import static
 from django.conf import settings
-from django.contrib.staticfiles.urls import staticfiles_urlpatterns
-from django.contrib.sitemaps import views as sitemaps_views, Sitemap
-from django.utils.translation import pgettext_lazy
+from django.conf.urls.static import static
 from django.contrib import admin
+from django.contrib.sitemaps import Sitemap
+from django.contrib.sitemaps import views as sitemaps_views
 from django.template.response import TemplateResponse
+from django.urls import include, path, reverse
+from django.utils.translation import pgettext_lazy
 
+from drf_spectacular.views import SpectacularSwaggerView
 from rest_framework.schemas import get_schema_view
 
 from froide.account.api_views import ProfileView, UserPreferenceView
-from froide.foirequest.api_views import (
-    FoiRequestViewSet,
-    FoiMessageViewSet,
-    FoiAttachmentViewSet,
-)
-from froide.publicbody.api_views import (
-    ClassificationViewSet,
-    CategoryViewSet,
-    PublicBodyViewSet,
-    JurisdictionViewSet,
-    FoiLawViewSet,
-)
-from froide.georegion.api_views import GeoRegionViewSet
-from froide.foirequestfollower.api_views import FoiRequestFollowerViewSet
+from froide.account.views import bad_login_view_redirect
 from froide.campaign.api_views import CampaignViewSet
-from froide.upload.api_views import UploadViewSet
-from froide.problem.api_views import ProblemReportViewSet
 from froide.document.api_views import (
-    PageViewSet,
-    DocumentViewSet,
     DocumentCollectionViewSet,
+    DocumentViewSet,
     PageAnnotationViewSet,
+    PageViewSet,
 )
 from froide.document.urls import document_media_urlpatterns
-
+from froide.foirequest.api_views import (
+    FoiAttachmentViewSet,
+    FoiMessageViewSet,
+    FoiRequestViewSet,
+)
+from froide.foirequest.views import FoiRequestSitemap, index
+from froide.foirequestfollower.api_views import FoiRequestFollowerViewSet
+from froide.georegion.api_views import GeoRegionViewSet
+from froide.problem.api_views import ProblemReportViewSet
+from froide.publicbody.api_views import (
+    CategoryViewSet,
+    ClassificationViewSet,
+    FoiLawViewSet,
+    JurisdictionViewSet,
+    PublicBodyViewSet,
+)
 from froide.publicbody.views import (
-    PublicBodySitemap,
     FoiLawSitemap,
     JurisdictionSitemap,
+    PublicBodySitemap,
 )
-from froide.foirequest.views import FoiRequestSitemap, index, dashboard
+from froide.upload.api_views import UploadViewSet
 
-
-from froide.helper import api_router
+from .api import api_router
 
 
 def handler500(request):
@@ -130,7 +130,12 @@ if settings.FROIDE_CONFIG.get("api_activated", True):
             name="api-user-preference",
         ),
         path("api/v1/", include((api_router.urls, "api"))),
-        path("api/v1/schema/", schema_view),
+        path("api/v1/schema/", schema_view, name="schema"),
+        path(
+            "api/v1/schema/swagger-ui/",
+            SpectacularSwaggerView.as_view(url_name="schema"),
+            name="swagger-ui",
+        ),
     ]
 
 
@@ -145,7 +150,8 @@ if len(settings.LANGUAGES) > 1:
 froide_urlpatterns += [
     # Translators: follow request URL
     path(
-        pgettext_lazy("url part", "follow/"), include("froide.foirequestfollower.urls")
+        pgettext_lazy("url part", "follow/"),
+        include("froide.follow.urls", namespace="follow"),
     ),
     path("", include("froide.publicbody.urls")),
     path(pgettext_lazy("url part", "law/"), include("froide.publicbody.law_urls")),
@@ -167,37 +173,21 @@ froide_urlpatterns += [
     path(pgettext_lazy("url part", "letter/"), include("froide.letter.urls")),
     path("guide/", include("froide.guide.urls")),
     path("500/", lambda request: TemplateResponse(request, "500.html")),
+    path(
+        pgettext_lazy("url part", "organization/"), include("froide.organization.urls")
+    ),
 ]
 
 froide_urlpatterns += document_media_urlpatterns
 
-admin_urls = [path("%s/" % SECRET_URLS.get("admin", "admin"), admin.site.urls)]
-
-if SECRET_URLS.get("postmark_inbound"):
-    from froide.foirequest.views import postmark_inbound
-
-    froide_urlpatterns += [
-        path(
-            "postmark/%s/" % SECRET_URLS["postmark_inbound"],
-            postmark_inbound,
-            name="foirequest-postmark_inbound",
-        )
-    ]
-
-if SECRET_URLS.get("postmark_bounce"):
-    from froide.foirequest.views import postmark_bounce
-
-    froide_urlpatterns += [
-        path(
-            "postmark/%s/" % SECRET_URLS["postmark_bounce"],
-            postmark_bounce,
-            name="foirequest-postmark_bounce",
-        )
-    ]
+admin_urls = [
+    # Disable admin login page, by overriding URL and redirecting
+    path("%s/login/" % SECRET_URLS.get("admin", "admin"), bad_login_view_redirect),
+    path("%s/" % SECRET_URLS.get("admin", "admin"), admin.site.urls),
+]
 
 
 if settings.DEBUG:
-    froide_urlpatterns += staticfiles_urlpatterns()
     froide_urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 if settings.DEBUG:
@@ -222,7 +212,6 @@ urlpatterns = (
     froide_urlpatterns
     + [
         path("", index, name="index"),
-        path("dashboard/", dashboard, name="dashboard"),
     ]
     + api_urlpatterns
     + sitemap_urlpatterns

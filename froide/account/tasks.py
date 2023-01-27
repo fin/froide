@@ -1,4 +1,7 @@
+from typing import Any, Iterator
+
 from django.conf import settings
+from django.db.models.query import QuerySet
 from django.utils import translation
 
 from froide.celery import app as celery_app
@@ -7,7 +10,7 @@ from .models import User
 
 
 @celery_app.task
-def cancel_account_task(user_pk, delete=False):
+def cancel_account_task(user_pk: int, delete: bool = False) -> None:
     from .utils import cancel_user
 
     translation.activate(settings.LANGUAGE_CODE)
@@ -39,13 +42,22 @@ def delete_deactivated_users_task():
 
 
 @celery_app.task
+def delete_undeleted_left_users_task():
+    from .utils import delete_undeleted_left_users
+
+    translation.activate(settings.LANGUAGE_CODE)
+
+    delete_undeleted_left_users()
+
+
+@celery_app.task
 def account_maintenance_task():
+    from .export import delete_all_expired_exports
     from .utils import (
-        delete_unconfirmed_users,
         delete_deactivated_users,
         delete_expired_onetime_login_tokens,
+        delete_unconfirmed_users,
     )
-    from .export import delete_all_expired_exports
 
     delete_unconfirmed_users()
     delete_deactivated_users()
@@ -102,12 +114,12 @@ def start_export_task(user_id, notification_user_id=None):
     create_export(user, notification_user=notification_user)
 
 
-def chunker(seq, size):
+def chunker(seq: QuerySet, size: int) -> Iterator[Any]:
     return (seq[pos : pos + size] for pos in range(0, len(seq), size))
 
 
 @celery_app.task
-def send_bulk_mail(user_ids, subject, body):
+def send_bulk_mail(user_ids: QuerySet, subject: str, body: str) -> None:
     from .utils import send_template_mail
 
     chunks = chunker(user_ids, 200)

@@ -1,23 +1,20 @@
-from datetime import datetime
 import json
 from collections import OrderedDict
 
 from django.conf import settings
 from django.utils.html import format_html
 
-from rest_framework.pagination import LimitOffsetPagination
-from rest_framework.response import Response
-from rest_framework.serializers import ListSerializer
-from rest_framework.utils.serializer_helpers import ReturnDict
+from elasticsearch_dsl.query import Q
 from rest_framework.decorators import action
-from rest_framework.reverse import reverse
+from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.renderers import JSONRenderer
 from rest_framework.request import Request
+from rest_framework.response import Response
+from rest_framework.reverse import reverse
+from rest_framework.serializers import ListSerializer
 from rest_framework.test import APIRequestFactory
-
+from rest_framework.utils.serializer_helpers import ReturnDict
 from rest_framework_jsonp.renderers import JSONPRenderer
-
-from elasticsearch_dsl.query import Q
 
 
 def get_fake_api_context(url="/"):
@@ -385,28 +382,3 @@ class OpenRefineReconciliationMixin(object):
         response["result"] = results
 
         return Response(response)
-
-
-def get_dict(obj, fields):
-    d = {}
-
-    for field in fields:
-        if isinstance(field, tuple):
-            field_name = field[0]
-        else:
-            field_name = field
-        if field_name in d:
-            continue
-        value = obj
-        for f in field_name.split("__"):
-            value = getattr(value, f, None)
-            if value is None:
-                break
-        if isinstance(field, tuple):
-            value = field[1](value)
-
-        if isinstance(value, datetime):
-            d[field_name] = value.isoformat()
-        else:
-            d[field_name] = value
-    return d

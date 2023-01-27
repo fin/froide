@@ -1,29 +1,35 @@
-from collections import defaultdict, namedtuple
-from datetime import datetime
-import time
-import importlib
 import gzip
 import io
 import logging
-import re
 import os
+import re
+import time
+from collections import defaultdict, namedtuple
+from datetime import datetime
 
-import pytz
+from django.utils import timezone
+
+from froide.helper.utils import get_module_attr_from_dotted_path
 
 
 def get_delivery_report(sender, recipient, timestamp, extended=False):
+    reporter = get_delivery_reporter()
+    if reporter:
+        return reporter.find(sender, recipient, timestamp, extended=extended)
+    else:
+        return
+
+
+def get_delivery_reporter():
     from django.conf import settings
 
     reporter_path = settings.FROIDE_CONFIG.get("delivery_reporter", None)
     if not reporter_path:
         return
 
-    module, klass = reporter_path.rsplit(".", 1)
-    module = importlib.import_module(module)
-    reporter_klass = getattr(module, klass)
-
-    reporter = reporter_klass(time_zone=settings.TIME_ZONE)
-    return reporter.find(sender, recipient, timestamp, extended=extended)
+    reporter_klass = get_module_attr_from_dotted_path(reporter_path)
+    reporter = reporter_klass(timezone=timezone.get_current_timezone())
+    return reporter
 
 
 DeliveryReport = namedtuple(
@@ -47,15 +53,17 @@ class PostfixDeliveryReporter(object):
     ]
     LOG_FILES_EXTENDED = ["/var/log/mail.log.%d.gz" % i for i in range(2, 12)]
 
-    def __init__(self, time_zone=None):
-        self.timezone = pytz.timezone(time_zone)
+    def __init__(self, timezone=None):
+        self.timezone = timezone
 
     def get_log_files(self, extended=False):
         for open_func, filename in self._get_files(extended):
             if not os.path.exists(filename):
                 continue
             try:
-                with open_func(filename, mode="rt", encoding="utf-8") as fp:
+                with open_func(
+                    filename, mode="rt", errors="replace", encoding="utf-8"
+                ) as fp:
                     yield fp
             except IOError as e:
                 logging.exception(e)
@@ -82,14 +90,17 @@ class PostfixDeliveryReporter(object):
             if result:
                 return result
 
-    def search_log(self, fp, sender, recipient, timestamp):
+    def search_log(self, fp, sender, recipient, timestamp, real_file=True):
         sender_re = re.compile(self.SENDER_RE.format(sender=sender))
         mail_ids = set()
         for line in fp:
             match = sender_re.search(line)
             if match:
                 mail_ids.add(match.group("mail_id"))
-        fp.seek(0)
+
+        if real_file:
+            fp.seek(0)
+
         mail_id_res = [
             re.compile(self.ALL_RE.format(mail_id=mail_id)) for mail_id in mail_ids
         ]
@@ -168,6 +179,5 @@ class PostfixDeliveryReporter(object):
             date_list[0] == 1900
         ):  # 1900 is the default year for time.strptime, hence no year was present in date_str
             date_list[0] = timestamp.year
-        date = datetime.fromtimestamp(time.mktime(tuple(date_list)))
-
-        return self.timezone.localize(date)
+        date = datetime.fromtimestamp(time.mktime(tuple(date_list)), tz=self.timezone)
+        return date

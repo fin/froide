@@ -1,59 +1,56 @@
-from io import BytesIO
 import re
+from io import BytesIO
 
+from django import forms
 from django.contrib import admin
+from django.contrib.admin import helpers
 from django.contrib.admin.views.main import ChangeList
+from django.core.exceptions import PermissionDenied
 from django.db import models
 from django.db.models.functions import RowNumber
-from django.shortcuts import redirect
 from django.http import HttpResponse
-from django.utils.translation import gettext_lazy as _
-from django.core.exceptions import PermissionDenied
-from django.urls import reverse, reverse_lazy
+from django.shortcuts import redirect
 from django.template.response import TemplateResponse
-from django.contrib.admin import helpers
-from django import forms
-from django.urls import path
-from django.utils.html import format_html
+from django.urls import path, reverse, reverse_lazy
 from django.utils import timezone
+from django.utils.html import format_html
+from django.utils.translation import gettext_lazy as _
 
 from froide.account.models import UserTag
-from froide.helper.admin_utils import (
-    make_nullfilter,
-    make_greaterzerofilter,
-    make_batch_tag_action,
-    ForeignKeyFilter,
-    TaggitListFilter,
-    SearchFilter,
-    make_choose_object_action,
-    MultiFilterMixin,
-)
-from froide.helper.widgets import TagAutocompleteWidget
-from froide.helper.forms import get_fake_fk_form_class
-from froide.helper.email_parsing import parse_email
-from froide.guide.utils import assign_guidance_action
 from froide.guide.models import Action
+from froide.guide.utils import assign_guidance_action
+from froide.helper.admin_utils import (
+    ForeignKeyFilter,
+    MultiFilterMixin,
+    SearchFilter,
+    TaggitListFilter,
+    make_batch_tag_action,
+    make_choose_object_action,
+    make_greaterzerofilter,
+    make_nullfilter,
+)
 from froide.helper.csv_utils import dict_to_csv_stream, export_csv_response
+from froide.helper.email_parsing import parse_email
+from froide.helper.forms import get_fake_fk_form_class
+from froide.helper.widgets import TagAutocompleteWidget
+from froide.publicbody.models import FoiLaw
+from froide.team.models import Team
 
 from .models import (
-    FoiRequest,
-    FoiMessage,
-    FoiProject,
+    DeferredMessage,
+    DeliveryStatus,
     FoiAttachment,
     FoiEvent,
-    PublicBodySuggestion,
+    FoiMessage,
+    FoiProject,
+    FoiRequest,
     MessageTag,
-    TaggedMessage,
-    DeferredMessage,
-    TaggedFoiRequest,
+    PublicBodySuggestion,
     RequestDraft,
-    DeliveryStatus,
+    TaggedFoiRequest,
+    TaggedMessage,
 )
-from .tasks import convert_attachment_task, ocr_pdf_attachment
 from .widgets import AttachmentFileWidget
-from .services import ActivatePendingRequestService
-from .utils import update_foirequest_index
-
 
 SUBJECT_REQUEST_ID = re.compile(r" \[#(\d+)\]")
 
@@ -101,6 +98,10 @@ assign_tag_to_foirequest_user = make_choose_object_action(
 )
 
 
+def execute_set_team(admin, request, queryset, action_obj):
+    queryset.update(team=action_obj)
+
+
 class FoiMessageInline(admin.StackedInline):
     model = FoiMessage
     raw_id_fields = (
@@ -110,7 +111,12 @@ class FoiMessageInline(admin.StackedInline):
         "recipient_public_body",
         "original",
     )
-    exclude = ("content_rendered_auth", "content_rendered_anon")
+    exclude = (
+        "content_rendered_auth",
+        "content_rendered_anon",
+        "redacted_content_auth",
+        "redacted_content_anon",
+    )
 
 
 class FoiRequestAdminForm(forms.ModelForm):
@@ -139,6 +145,21 @@ class FoiRequestChangeList(ChangeList):
         return ret
 
 
+class LawRelatedFieldListFilter(admin.RelatedFieldListFilter):
+    """
+    This optimizes the query for the law filter
+    """
+
+    def field_choices(self, field, request, model_admin):
+        return [
+            (x.id, str(x))
+            for x in FoiLaw.objects.all()
+            .select_related("jurisdiction")
+            .prefetch_related("translations")
+        ]
+
+
+@admin.register(FoiRequest)
 class FoiRequestAdmin(admin.ModelAdmin):
     form = FoiRequestAdminForm
 
@@ -148,16 +169,17 @@ class FoiRequestAdmin(admin.ModelAdmin):
     ]
     list_display = (
         "title",
-        "first_message",
+        "created_at",
         "secret_address",
         "request_page",
         "public_body",
         "status",
         "visibility",
+        "follower_count",
     )
     list_filter = (
         "jurisdiction",
-        "first_message",
+        "created_at",
         "last_message",
         "status",
         "resolution",
@@ -168,16 +190,18 @@ class FoiRequestAdmin(admin.ModelAdmin):
         "is_blocked",
         "not_publishable",
         "campaign",
-        "law",
         make_nullfilter("same_as", _("Has same request")),
         ("user", ForeignKeyFilter),
         ("public_body", ForeignKeyFilter),
         ("project", ForeignKeyFilter),
+        ("tags", ForeignKeyFilter),
         make_greaterzerofilter("costs", _("Costs given")),
+        ("law", LawRelatedFieldListFilter),
+        "refusal_reason",
     )
     search_fields = ["title", "description", "secret_address", "reference"]
     ordering = ("-last_message",)
-    date_hierarchy = "first_message"
+    date_hierarchy = "created_at"
 
     actions = [
         "mark_checked",
@@ -188,8 +212,10 @@ class FoiRequestAdmin(admin.ModelAdmin):
         "mark_same_as",
         "update_index",
         "confirm_request",
+        "publish",
         "unpublish",
         "add_to_project",
+        "set_team",
         "unblock_request",
         "close_requests",
         "attach_guidance_to_last_message",
@@ -219,6 +245,11 @@ class FoiRequestAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         qs = qs.prefetch_related("public_body")
+        qs = qs.annotate(
+            follower_count=models.Count(
+                "followers", filter=models.Q(followers__confirmed=True)
+            )
+        )
         return qs
 
     def request_page(self, obj):
@@ -226,16 +257,27 @@ class FoiRequestAdmin(admin.ModelAdmin):
             '<a href="{}">{}</a>', obj.get_absolute_url(), _("request page")
         )
 
+    @admin.display(
+        description=_("follower"),
+        ordering="follower_count",
+    )
+    def follower_count(self, obj):
+        return obj.follower_count
+
+    @admin.action(description=_("Mark selected requests as checked"))
     def mark_checked(self, request, queryset):
+        from .utils import update_foirequest_index
+
         rows_updated = queryset.update(checked=True)
         update_foirequest_index(queryset)
         self.message_user(
             request, _("%d request(s) successfully marked as checked." % rows_updated)
         )
 
-    mark_checked.short_description = _("Mark selected requests as checked")
-
+    @admin.action(description=_("Mark selected requests as not FoI"))
     def mark_not_foi(self, request, queryset):
+        from .utils import update_foirequest_index
+
         rows_updated = queryset.update(
             is_foi=False,
             public=False,
@@ -246,9 +288,10 @@ class FoiRequestAdmin(admin.ModelAdmin):
             request, _("%d request(s) successfully marked as not FoI." % rows_updated)
         )
 
-    mark_not_foi.short_description = _("Mark selected requests as not FoI")
-
+    @admin.action(description=_("Mark successfully resolved"))
     def mark_successfully_resolved(self, request, queryset):
+        from .utils import update_foirequest_index
+
         rows_updated = queryset.update(
             status=FoiRequest.STATUS.RESOLVED,
             resolution=FoiRequest.RESOLUTION.SUCCESSFUL,
@@ -262,9 +305,10 @@ class FoiRequestAdmin(admin.ModelAdmin):
             ),
         )
 
-    mark_successfully_resolved.short_description = _("Mark successfully resolved")
-
+    @admin.action(description=_("Mark as refused"))
     def mark_refused(self, request, queryset):
+        from .utils import update_foirequest_index
+
         rows_updated = queryset.update(
             status=FoiRequest.STATUS.RESOLVED, resolution=FoiRequest.RESOLUTION.REFUSED
         )
@@ -273,22 +317,24 @@ class FoiRequestAdmin(admin.ModelAdmin):
             request, _("%d request(s) have been marked as refused." % rows_updated)
         )
 
-    mark_refused.short_description = _("Mark as refused")
-
+    @admin.action(description=_("Update search index"))
     def update_index(self, request, queryset):
+        from .utils import update_foirequest_index
+
         update_foirequest_index(queryset)
         self.message_user(
             request,
             _("%d request(s) will be updated in the search index." % queryset.count()),
         )
 
-    update_index.short_description = _("Update search index")
-
+    @admin.action(description=_("Mark selected requests as identical to..."))
     def mark_same_as(self, request, queryset):
         """
         Mark selected requests as same as the one we are choosing now.
 
         """
+        from .utils import update_foirequest_index
+
         opts = self.model._meta
         # Check that the user has change permission for the actual model
         if not self.has_change_permission(request):
@@ -324,9 +370,10 @@ class FoiRequestAdmin(admin.ModelAdmin):
         # Display the confirmation page
         return TemplateResponse(request, "foirequest/admin/mark_same_as.html", context)
 
-    mark_same_as.short_description = _("Mark selected requests as identical to...")
-
+    @admin.action(description=_("Confirm request if unconfirmed"))
     def confirm_request(self, request, queryset):
+        from .services import ActivatePendingRequestService
+
         foirequest = queryset[0]
         if foirequest.status != FoiRequest.STATUS.AWAITING_USER_CONFIRMATION:
             self.message_user(request, _("Request not in correct state!"))
@@ -336,37 +383,49 @@ class FoiRequestAdmin(admin.ModelAdmin):
         foirequest = req_service.process(request=None)
         return None
 
-    confirm_request.short_description = _("Confirm request if unconfirmed")
-
+    @admin.action(description=_("Unpublish"))
     def unpublish(self, request, queryset):
+        from .utils import update_foirequest_index
+
         queryset.update(
             public=False, visibility=FoiRequest.VISIBILITY.VISIBLE_TO_REQUESTER
         )
         update_foirequest_index(queryset)
         self.message_user(request, _("Selected requests are now unpublished."))
 
-    unpublish.short_description = _("Unpublish")
+    @admin.action(description=_("Publish"))
+    def publish(self, request, queryset):
+        from .utils import update_foirequest_index
 
+        queryset.update(public=True, visibility=FoiRequest.VISIBILITY.VISIBLE_TO_PUBLIC)
+        update_foirequest_index(queryset)
+        self.message_user(request, _("Selected requests are now published."))
+
+    @admin.action(description=_("Unblock requests and send first message"))
     def unblock_request(self, request, queryset):
         for req in queryset:
             mes = req.messages[0]
-            mes.timestamp = timezone.now()
-            if req.law:
-                req.due_date = req.law.calculate_due_date()
+            if not mes.sent:
+                mes.timestamp = timezone.now()
+                if req.law:
+                    req.due_date = req.law.calculate_due_date()
+                req.created_at = mes.timestamp
+
             req.is_blocked = False
-            req.first_message = mes.timestamp
             req.save()
-            mes.save()
-            mes.force_resend()
 
-    unblock_request.short_description = _("Unblock requests and send first message")
+            if not mes.sent:
+                mes.save()
+                mes.force_resend()
 
+    @admin.action(description=_("Close requests"))
     def close_requests(self, request, queryset):
+        from .utils import update_foirequest_index
+
         queryset.update(closed=True)
         update_foirequest_index(queryset)
 
-    close_requests.short_description = _("Close requests")
-
+    @admin.action(description=_("Add selected requests to project..."))
     def add_to_project(self, request, queryset):
         """
         Mark selected requests as same as the one we are choosing now.
@@ -406,7 +465,9 @@ class FoiRequestAdmin(admin.ModelAdmin):
             request, "foirequest/admin/add_to_project.html", context
         )
 
-    add_to_project.short_description = _("Add selected requests to project...")
+    set_team = make_choose_object_action(
+        Team, execute_set_team, _("Set team for requests...")
+    )
 
 
 class FoiAttachmentInline(admin.TabularInline):
@@ -433,6 +494,7 @@ class MessageTagsFilter(MultiFilterMixin, TaggitListFilter):
     lookup_name = "__in"
 
 
+@admin.register(FoiMessage)
 class FoiMessageAdmin(admin.ModelAdmin):
     save_on_top = True
     list_display = (
@@ -477,7 +539,12 @@ class FoiMessageAdmin(admin.ModelAdmin):
         DeliveryStatusInline,
         FoiAttachmentInline,
     ]
-    exclude = ("content_rendered_auth", "content_rendered_anon")
+    exclude = (
+        "content_rendered_auth",
+        "content_rendered_anon",
+        "redacted_content_auth",
+        "redacted_content_anon",
+    )
     actions = [
         "check_delivery_status",
         "resend_messages",
@@ -525,6 +592,7 @@ class FoiMessageAdmin(admin.ModelAdmin):
 
     attach_guidance_action = assign_guidance_action
 
+    @admin.action(description=_("Run guidance with user notifications"))
     def run_guidance_notify(self, request, queryset):
         self._run_guidance(queryset, notify=True)
         self.message_user(
@@ -532,15 +600,12 @@ class FoiMessageAdmin(admin.ModelAdmin):
             _("Guidance is being run against selected messages. Users are notified."),
         )
 
-    run_guidance_notify.short_description = _("Run guidance with user notifications")
-
+    @admin.action(description=_("Run guidance"))
     def run_guidance(self, request, queryset):
         self._run_guidance(queryset, notify=False)
         self.message_user(
             request, _("Guidance is being run against selected messages.")
         )
-
-    run_guidance.short_description = _("Run guidance")
 
     def _run_guidance(self, queryset, notify=False):
         from froide.guide.tasks import run_guidance_on_queryset_task
@@ -548,22 +613,11 @@ class FoiMessageAdmin(admin.ModelAdmin):
         message_ids = queryset.values_list("id", flat=True)
         run_guidance_on_queryset_task.delay(message_ids, notify=notify)
 
+    @admin.display(description=_("delivery status"))
     def get_deliverystatus_display(self, obj):
         return obj.deliverystatus.get_status_display()
 
-    get_deliverystatus_display.short_description = _("delivery status")
-
-    def check_delivery_status(self, request, queryset):
-        from .tasks import check_delivery_status
-
-        for message in queryset:
-            check_delivery_status.delay(message.id, extended=True)
-        self.message_user(
-            request, _("Selected messages are being checked for delivery.")
-        )
-
-    check_delivery_status.short_description = _("Check delivery status")
-
+    @admin.action(description=_("Resend selected messages"))
     def resend_message(self, request, pk):
         if not request.method == "POST":
             raise PermissionDenied
@@ -619,13 +673,13 @@ class FoiMessageAdmin(admin.ModelAdmin):
             ),
         )
 
-    resend_message.short_description = _("Resend selected messages")
 
-
+@admin.register(MessageTag)
 class MessageTagAdmin(admin.ModelAdmin):
     prepopulated_fields = {"slug": ("name",)}
     actions = ["export_csv"]
 
+    @admin.action(description=_("Export public body tag stats to CSV"))
     def export_csv(self, request, queryset):
         from froide.publicbody.models import PublicBody
 
@@ -647,9 +701,8 @@ class MessageTagAdmin(admin.ModelAdmin):
         csv_stream = dict_to_csv_stream(get_stream(queryset))
         return export_csv_response(csv_stream, name="tag_stats.csv")
 
-    export_csv.short_description = _("Export public body tag stats to CSV")
 
-
+@admin.register(FoiAttachment)
 class FoiAttachmentAdmin(admin.ModelAdmin):
     raw_id_fields = ("belongs_to", "redacted", "converted", "document")
     ordering = ("-id",)
@@ -673,6 +726,7 @@ class FoiAttachmentAdmin(admin.ModelAdmin):
         "pending",
         ("belongs_to__request", ForeignKeyFilter),
         ("belongs_to__request__user", ForeignKeyFilter),
+        ("belongs_to__sender_public_body", ForeignKeyFilter),
     )
     search_fields = ["name"]
     formfield_overrides = {
@@ -699,22 +753,21 @@ class FoiAttachmentAdmin(admin.ModelAdmin):
             _("See FoiMessage"),
         )
 
+    @admin.action(description=_("Mark selected as approved"))
     def approve(self, request, queryset):
         rows_updated = queryset.update(approved=True)
         self.message_user(
             request, _("%d attachment(s) successfully approved." % rows_updated)
         )
 
-    approve.short_description = _("Mark selected as approved")
-
+    @admin.action(description=_("Mark selected as disapproved"))
     def disapprove(self, request, queryset):
         rows_updated = queryset.update(approved=False)
         self.message_user(
             request, _("%d attachment(s) successfully disapproved." % rows_updated)
         )
 
-    disapprove.short_description = _("Mark selected as disapproved")
-
+    @admin.action(description=_("Mark selected as not approvable/approved"))
     def cannot_approve(self, request, queryset):
         rows_updated = queryset.update(can_approve=False, approved=False)
         self.message_user(
@@ -725,9 +778,10 @@ class FoiAttachmentAdmin(admin.ModelAdmin):
             ),
         )
 
-    cannot_approve.short_description = _("Mark selected as not approvable/approved")
-
+    @admin.action(description=_("Convert to PDF"))
     def convert(self, request, queryset):
+        from .tasks import convert_attachment_task
+
         if not queryset:
             return
         count = 0
@@ -737,8 +791,7 @@ class FoiAttachmentAdmin(admin.ModelAdmin):
                 convert_attachment_task.delay(instance.pk)
         self.message_user(request, _("Conversion tasks started: %s") % count)
 
-    convert.short_description = _("Convert to PDF")
-
+    @admin.action(description=_("Make into document"))
     def make_document(self, request, queryset):
         count = 0
         for instance in queryset:
@@ -747,15 +800,15 @@ class FoiAttachmentAdmin(admin.ModelAdmin):
                 count += 1
         self.message_user(request, _("%s document(s) created") % count)
 
-    make_document.short_description = _("Make into document")
-
+    @admin.action(description=_("OCR PDF"))
     def ocr_attachment(self, request, queryset):
+        from .tasks import ocr_pdf_attachment
+
         for att in queryset:
             ocr_pdf_attachment(att)
 
-    ocr_attachment.short_description = _("OCR PDF")
 
-
+@admin.register(FoiEvent)
 class FoiEventAdmin(admin.ModelAdmin):
     list_display = ("event_name", "user", "timestamp", "request")
     list_filter = (
@@ -780,6 +833,7 @@ class FoiEventAdmin(admin.ModelAdmin):
         return qs
 
 
+@admin.register(PublicBodySuggestion)
 class PublicBodySuggestionAdmin(admin.ModelAdmin):
     list_display = (
         "request",
@@ -803,6 +857,7 @@ def execute_redeliver(admin, request, queryset, action_obj):
         deferred.redeliver(action_obj)
 
 
+@admin.register(DeferredMessage)
 class DeferredMessageAdmin(admin.ModelAdmin):
     model = DeferredMessage
 
@@ -853,14 +908,14 @@ class DeferredMessageAdmin(admin.ModelAdmin):
                 '<a href="{}">{}</a>', obj.request.get_absolute_url(), obj.request.title
             )
 
+    @admin.action(description=_("Close associated requests"))
     def close_request(self, request, queryset):
         for mes in queryset:
             mes.request.closed = True
             mes.request.save()
         return None
 
-    close_request.short_description = _("Close associated requests")
-
+    @admin.action(description=_("Auto-Redeliver based on subject"))
     def redeliver_subject(self, request, queryset):
         for deferred in queryset:
             email = parse_email(BytesIO(deferred.encoded_mail()))
@@ -872,8 +927,7 @@ class DeferredMessageAdmin(admin.ModelAdmin):
                 except FoiRequest.DoesNotExist:
                     continue
 
-    redeliver_subject.short_description = _("Auto-Redeliver based on subject")
-
+    @admin.action(description=_("Deliver and mark as no spam"))
     def deliver_no_spam(self, request, queryset):
         for deferred in queryset:
             if deferred.request is not None:
@@ -883,8 +937,7 @@ class DeferredMessageAdmin(admin.ModelAdmin):
                 else:
                     deferred.redeliver(deferred.request)
 
-    deliver_no_spam.short_description = _("Deliver and mark as no spam")
-
+    @admin.action(description=_("Mark as spam (delete all except one per sender)"))
     def mark_as_spam(self, request, queryset):
         spam_senders = set()
         marked = 0
@@ -904,10 +957,6 @@ class DeferredMessageAdmin(admin.ModelAdmin):
                 marked=marked, deleted=deleted
             ),
         )
-
-    mark_as_spam.short_description = _(
-        "Mark as spam (delete all except one per sender)"
-    )
 
     redeliver = make_choose_object_action(
         FoiRequest, execute_redeliver, _("Redeliver to...")
@@ -932,6 +981,7 @@ def execute_move_requests(admin, request, queryset, action_obj):
         action_obj.add_requests(FoiRequest.objects.filter(project=foi_project))
 
 
+@admin.register(FoiProject)
 class FoiProjectAdmin(admin.ModelAdmin):
     form = FoiRequestAdminForm
 
@@ -974,13 +1024,13 @@ class FoiProjectAdmin(admin.ModelAdmin):
         FoiProject, execute_move_requests, _("Move requests to...")
     )
 
+    @admin.action(description=_("Publish project and all requests"))
     def publish(self, request, queryset):
         for foi_project in queryset:
             foi_project.make_public(publish_requests=True, user=request.user)
 
-    publish.short_description = _("Publish project and all requests")
 
-
+@admin.register(RequestDraft)
 class RequestDraftAdmin(admin.ModelAdmin):
     list_display = (
         "save_date",
@@ -994,6 +1044,7 @@ class RequestDraftAdmin(admin.ModelAdmin):
     raw_id_fields = ("user", "publicbodies", "request", "project")
 
 
+@admin.register(DeliveryStatus)
 class DeliveryStatusAdmin(admin.ModelAdmin):
     raw_id_fields = ("message",)
     date_hierarchy = "last_update"
@@ -1007,15 +1058,3 @@ class DeliveryStatusAdmin(admin.ModelAdmin):
         qs = super().get_queryset(request)
         qs = qs.prefetch_related("message", "message__request")
         return qs
-
-
-admin.site.register(FoiRequest, FoiRequestAdmin)
-admin.site.register(FoiMessage, FoiMessageAdmin)
-admin.site.register(MessageTag, MessageTagAdmin)
-admin.site.register(FoiAttachment, FoiAttachmentAdmin)
-admin.site.register(FoiEvent, FoiEventAdmin)
-admin.site.register(PublicBodySuggestion, PublicBodySuggestionAdmin)
-admin.site.register(DeferredMessage, DeferredMessageAdmin)
-admin.site.register(RequestDraft, RequestDraftAdmin)
-admin.site.register(FoiProject, FoiProjectAdmin)
-admin.site.register(DeliveryStatus, DeliveryStatusAdmin)

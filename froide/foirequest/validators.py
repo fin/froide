@@ -1,13 +1,13 @@
-from django.utils.encoding import force_str
 from django.core.exceptions import ValidationError
+from django.utils.encoding import force_str
 from django.utils.translation import gettext_lazy as _
-
-import magic
 
 from .models.attachment import POSTAL_CONTENT_TYPES
 
 
 def get_content_type(scan):
+    import magic
+
     scan.seek(0)
     content_type = magic.from_buffer(scan.read(1024), mime=True)
     content_type = force_str(content_type)
@@ -55,9 +55,7 @@ PLACEHOLDER_MARKER = "…"  # Single character, horizontal ellipsis U+2026
 def validate_no_placeholder(value):
     if PLACEHOLDER_MARKER in value:
         raise ValidationError(
-            _(
-                "Please replace all placeholder values marked by “{}”.".format(
-                    PLACEHOLDER_MARKER
-                )
+            _("Please replace all placeholder values marked by “{}”.").format(
+                PLACEHOLDER_MARKER
             )
         )

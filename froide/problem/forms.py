@@ -1,21 +1,19 @@
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
-from .models import ProblemReport, USER_PROBLEM_CHOICES, EXTERNAL_PROBLEM_CHOICES
+from froide.helper.widgets import BootstrapRadioSelect
+
+from .models import EXTERNAL_PROBLEM_CHOICES, USER_PROBLEM_CHOICES, ProblemReport
 
 
 class ProblemReportForm(forms.Form):
     kind = forms.ChoiceField(
         choices=[],
         label=_("What is the problem?"),
-        widget=forms.Select(
-            attrs={
-                "class": "form-control",
-            }
-        ),
+        widget=BootstrapRadioSelect,
     )
     description = forms.CharField(
-        required=True,
+        required=False,
         label=_("Details"),
         widget=forms.Textarea(attrs={"class": "form-control", "rows": "2"}),
     )
@@ -27,9 +25,9 @@ class ProblemReportForm(forms.Form):
         kwargs["prefix"] = "problemreport_{}_".format(self.message.pk)
         super().__init__(*args, **kwargs)
         if is_requester:
-            self.fields["kind"].choices = [("", "---")] + USER_PROBLEM_CHOICES
+            self.fields["kind"].choices = USER_PROBLEM_CHOICES
         else:
-            self.fields["kind"].choices = [("", "---")] + EXTERNAL_PROBLEM_CHOICES
+            self.fields["kind"].choices = EXTERNAL_PROBLEM_CHOICES
 
     def save(self):
         description = self.cleaned_data["description"]

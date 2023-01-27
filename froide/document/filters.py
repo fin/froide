@@ -2,27 +2,26 @@ from django import forms
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
-from taggit.models import Tag
 import django_filters
 from elasticsearch_dsl.query import Q as ESQ
-
-from froide.helper.search.filters import BaseSearchFilterSet
-from froide.publicbody.models import PublicBody, Jurisdiction
-from froide.foirequest.auth import get_read_foirequest_queryset
-from froide.campaign.models import Campaign
-from froide.account.models import User
-from froide.helper.auth import get_read_queryset
-from froide.helper.widgets import DateRangeWidget
-
-from filingcabinet.models import DocumentPortal, Page
 from filingcabinet.filters import DocumentFilter as FCDocumentFilter
+from filingcabinet.models import CollectionDirectory, DocumentPortal, Page
+from taggit.models import Tag
+
+from froide.account.models import User
+from froide.campaign.models import Campaign
+from froide.foirequest.auth import get_read_foirequest_queryset
+from froide.helper.auth import get_read_queryset
+from froide.helper.search.filters import BaseSearchFilterSet
+from froide.helper.widgets import BootstrapSelect, DateRangeWidget
+from froide.publicbody.models import Jurisdiction, PublicBody
 
 from .models import Document, DocumentCollection
 
 
-def get_document_read_qs(request, detail=False):
+def get_document_read_qs(request, read_unlisted=False):
     public_q = Q(public=True, listed=True)
-    if detail:
+    if read_unlisted:
         public_q = Q(public=True)
     return get_read_queryset(
         Document.objects.all(),
@@ -67,16 +66,16 @@ class PageDocumentFilterset(BaseSearchFilterSet):
         null_value="-",
         empty_label=_("all/no campaigns"),
         null_label=_("no campaign"),
-        widget=forms.Select(attrs={"label": _("campaign"), "class": "form-control"}),
+        label=_("campaign"),
+        widget=BootstrapSelect,
         method="filter_campaign",
     )
     jurisdiction = django_filters.ModelChoiceFilter(
         queryset=Jurisdiction.objects.get_visible(),
         to_field_name="slug",
         empty_label=_("all jurisdictions"),
-        widget=forms.Select(
-            attrs={"label": _("jurisdiction"), "class": "form-control"}
-        ),
+        label=_("jurisdiction"),
+        widget=BootstrapSelect,
         method="filter_jurisdiction",
     )
     tag = django_filters.ModelChoiceFilter(
@@ -84,6 +83,11 @@ class PageDocumentFilterset(BaseSearchFilterSet):
         to_field_name="slug",
         method="filter_tag",
         widget=forms.HiddenInput(),
+    )
+    foirequest = django_filters.ModelChoiceFilter(
+        queryset=None,
+        to_field_name="pk",
+        method="filter_foirequest",
     )
     publicbody = django_filters.ModelChoiceFilter(
         queryset=PublicBody._default_manager.all(),
@@ -95,6 +99,12 @@ class PageDocumentFilterset(BaseSearchFilterSet):
         queryset=DocumentCollection.objects.all(),
         to_field_name="pk",
         method="filter_collection",
+        widget=forms.HiddenInput(),
+    )
+    directory = django_filters.ModelChoiceFilter(
+        queryset=CollectionDirectory.objects.all().select_related("collection"),
+        to_field_name="pk",
+        method="filter_directory",
         widget=forms.HiddenInput(),
     )
     portal = django_filters.ModelChoiceFilter(
@@ -143,6 +153,7 @@ class PageDocumentFilterset(BaseSearchFilterSet):
         if request is None:
             request = self.view.request
         self.request = request
+        self.filters["foirequest"].queryset = get_read_foirequest_queryset(request)
 
     def filter_queryset(self, queryset):
         required_unlisted_filters = {"document", "collection"}
@@ -169,11 +180,20 @@ class PageDocumentFilterset(BaseSearchFilterSet):
     def filter_publicbody(self, qs, name, value):
         return qs.filter(publicbody=value.id)
 
+    def filter_foirequest(self, qs, name, value):
+        return qs.filter(foirequest=value)
+
     def filter_collection(self, qs, name, collection):
         if not collection.can_read(self.request):
             return qs.none()
         qs = qs.filter(collections=collection.id)
         qs = self.apply_data_filters(qs, collection.settings.get("filters", []))
+        return qs
+
+    def filter_directory(self, qs, name, directory):
+        if not directory.collection.can_read(self.request):
+            return qs.none()
+        qs = qs.filter(directories=directory.id)
         return qs
 
     def filter_portal(self, qs, name, portal):

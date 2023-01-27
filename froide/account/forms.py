@@ -1,28 +1,34 @@
 from collections import defaultdict
+from typing import Dict, Union
 
-from django.utils.translation import gettext_lazy as _
-from django.utils.html import format_html
-from django.contrib import auth
-from django.contrib.auth import get_user_model
-from django.conf import settings
-from django.contrib.auth.forms import SetPasswordForm as DjangoSetPasswordForm
-from django.contrib.auth.password_validation import password_validators_help_text_html
-from django.contrib.auth.forms import (
-    UserCreationForm as DjangoUserCreationForm,
-    UserChangeForm as DjangoUserChangeForm,
-)
 from django import forms
+from django.conf import settings
+from django.contrib import auth
+from django.contrib.auth import authenticate
+from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.forms import SetPasswordForm as DjangoSetPasswordForm
+from django.contrib.auth.forms import UserChangeForm as DjangoUserChangeForm
+from django.contrib.auth.forms import UserCreationForm as DjangoUserCreationForm
+from django.contrib.auth.password_validation import password_validators_help_text_html
+from django.http import HttpRequest
+from django.utils.functional import SimpleLazyObject
+from django.utils.html import format_html
+from django.utils.translation import gettext_lazy as _
 
-from froide.helper.spam import SpamProtectionMixin
-from froide.helper.form_utils import JSONMixin
 from froide.helper.content_urls import get_content_url
-from froide.helper.widgets import BootstrapCheckboxInput
+from froide.helper.form_utils import JSONMixin
+from froide.helper.spam import SpamProtectionMixin
+from froide.helper.widgets import (
+    BootstrapCheckboxInput,
+    BootstrapSelect,
+    ImageFileInput,
+)
 
 from . import account_email_changed
-from .widgets import ConfirmationWidget
+from .auth import complete_mfa_authenticate_for_method
 from .models import AccountBlocklist, User
 from .services import AccountService, get_user_for_email
-
+from .widgets import ConfirmationWidget, PinInputWidget
 
 USER_CAN_HIDE_WEB = settings.FROIDE_CONFIG.get("user_can_hide_web", True)
 ALLOW_PSEUDONYM = settings.FROIDE_CONFIG.get("allow_pseudonym", False)
@@ -52,15 +58,15 @@ class UserExtrasRegistry:
     def register(self, key, form_extender):
         self.registry[key].append(form_extender)
 
-    def on_init(self, key, form):
+    def on_init(self, key: str, form) -> None:
         for fe in self.registry[key]:
             fe.on_init(form)
 
-    def on_clean(self, key, form):
+    def on_clean(self, key: str, form) -> None:
         for fe in self.registry[key]:
             fe.on_clean(form)
 
-    def on_save(self, key, form, user):
+    def on_save(self, key: str, form, user: Union[SimpleLazyObject, User]) -> None:
         for fe in self.registry[key]:
             fe.on_save(form, user)
 
@@ -89,14 +95,14 @@ class AddressBaseForm(forms.Form):
             attrs={
                 "rows": "3",
                 "class": "form-control",
-                "placeholder": _("Street, Post Code, City"),
+                "placeholder": _("Street address,\nPost Code, City"),
             }
         ),
     )
 
     ALLOW_BLOCKED_ADDRESS = False
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         if self.fields["address"].required:
             self.fields["address"].help_text = ADDRESS_REQUIRED_HELP_TEXT
@@ -104,7 +110,7 @@ class AddressBaseForm(forms.Form):
     def get_user(self):
         raise NotImplementedError
 
-    def clean_address(self):
+    def clean_address(self) -> str:
         address = self.cleaned_data["address"]
         if not address:
             return address
@@ -164,7 +170,7 @@ class NewUserBaseForm(AddressBaseForm):
 
     field_order = ["first_name", "last_name", "user_email"]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         address_required = kwargs.pop("address_required", False)
         super().__init__(*args, **kwargs)
         self.fields["address"].required = address_required
@@ -173,16 +179,16 @@ class NewUserBaseForm(AddressBaseForm):
                 _(
                     '<a target="_blank" href="{}">You may use a pseudonym if you don\'t need to receive postal messages</a>.'
                 ),
-                get_content_url("privacy") + "#pseudonym",
+                get_content_url("pseudonym"),
             )
 
-    def clean_user_email(self):
+    def clean_user_email(self) -> str:
         return User.objects.normalize_email(self.cleaned_data["user_email"])
 
-    def clean_first_name(self):
+    def clean_first_name(self) -> str:
         return self.cleaned_data["first_name"].strip()
 
-    def clean_last_name(self):
+    def clean_last_name(self) -> str:
         return self.cleaned_data["last_name"].strip()
 
 
@@ -196,7 +202,7 @@ class TermsForm(forms.Form):
         },
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         if not hasattr(self, "request"):
             self.request = kwargs.pop("request", None)
         kwargs.pop("request", None)
@@ -212,16 +218,19 @@ class TermsForm(forms.Form):
         )
 
 
+CleanedData = Dict[str, Union[str, bool]]
+
+
 class ExplicitRegistrationMixin:
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         user_extra_registry.on_init("registration", self)
 
-    def clean(self):
+    def clean(self) -> CleanedData:
         user_extra_registry.on_clean("registration", self)
         return self.cleaned_data
 
-    def save(self, user):
+    def save(self, user: User) -> None:
         user.terms = True
         user_extra_registry.on_save("registration", self, user)
         user.save()
@@ -274,7 +283,7 @@ class NewUserWithPasswordForm(NewUserForm):
 class AddressForm(JSONMixin, AddressBaseForm):
     ALLOW_BLOCKED_ADDRESS = False
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         address_required = kwargs.pop("address_required", False)
         self.request = kwargs.pop("request", None)
         super().__init__(*args, **kwargs)
@@ -283,7 +292,7 @@ class AddressForm(JSONMixin, AddressBaseForm):
     def get_user(self):
         return self.request.user
 
-    def save(self, user):
+    def save(self, user: SimpleLazyObject) -> None:
         address = self.cleaned_data["address"]
         if address:
             user.address = address
@@ -291,8 +300,8 @@ class AddressForm(JSONMixin, AddressBaseForm):
             user.save()
 
 
-class UserLoginForm(forms.Form):
-    email = forms.EmailField(
+class UserLoginForm(AuthenticationForm):
+    username = forms.EmailField(
         widget=forms.EmailInput(
             attrs={
                 "placeholder": _("mail@ddress.net"),
@@ -308,6 +317,58 @@ class UserLoginForm(forms.Form):
         ),
         label=_("Password"),
     )
+    error_messages = {
+        "invalid_login": _("Email and password do not match."),
+        "inactive": _("Please activate your mail address before logging in."),
+    }
+
+
+class ReAuthForm(forms.Form):
+    code = forms.CharField(
+        required=False, label=_("Authentication code"), widget=PinInputWidget
+    )
+    password = forms.CharField(
+        required=False,
+        widget=forms.PasswordInput(
+            attrs={"class": "form-control", "autocomplete": "current-password"}
+        ),
+        label=_("Password"),
+    )
+    hidden_email = forms.CharField(
+        required=False, widget=forms.HiddenInput(attrs={"autocomplete": "username"})
+    )
+    method = forms.ChoiceField(
+        choices=[("password", "password")], widget=forms.HiddenInput
+    )
+
+    def __init__(self, request=None, mfa_methods=None, *args, **kwargs):
+        """
+        The 'request' parameter is set for custom auth use by subclasses.
+        The form data comes in via the standard 'data' kwarg.
+        """
+        self.request = request
+        super().__init__(*args, **kwargs)
+        user = self.request.user
+        self.fields["hidden_email"].initial = user.email
+        self.mfa_methods = mfa_methods
+        self.fields["method"].choices.extend([(m, m) for m in mfa_methods])
+
+    def clean(self):
+        user = self.request.user
+        method = self.cleaned_data["method"]
+        if method == "password":
+            password = self.cleaned_data.get("password", "")
+            result = authenticate(self.request, username=user.email, password=password)
+            if result is None:
+                raise forms.ValidationError(_("Bad password."))
+        else:
+            try:
+                complete_mfa_authenticate_for_method(
+                    method, self.request, user, self.cleaned_data["code"]
+                )
+            except ValueError as e:
+                raise forms.ValidationError(_("Validation failed.")) from e
+        return self.cleaned_data
 
 
 class PasswordResetForm(auth.forms.PasswordResetForm):
@@ -351,28 +412,24 @@ class UserChangeDetailsForm(forms.Form):
     )
     field_order = ["email", "address"]
 
-    def __init__(self, user, *args, **kwargs):
+    def __init__(self, user: SimpleLazyObject, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.user = user
         self.fields["address"].initial = self.user.address
         self.fields["email"].initial = self.user.email
         self.order_fields(self.field_order)
 
-    def clean_email(self):
+    def clean_email(self) -> str:
         email = self.cleaned_data["email"].lower()
-        if (
-            self.user.email != email
-            and get_user_model().objects.filter(email=email).exists()
-        ):
-            raise forms.ValidationError(
-                _("Another user with that email address already exists!")
-            )
         return email
 
-    def save(self):
+    def save(self) -> None:
         self.user.address = self.cleaned_data["address"]
         AccountService.check_against_blocklist(self.user, save=False)
         self.user.save()
+
+
+CleanedData2 = Dict[str, Union[str, int]]
 
 
 class UserEmailConfirmationForm(forms.Form):
@@ -380,23 +437,23 @@ class UserEmailConfirmationForm(forms.Form):
     secret = forms.CharField(min_length=32, max_length=32)
     user_id = forms.IntegerField()
 
-    def __init__(self, user, *args, **kwargs):
+    def __init__(self, user: SimpleLazyObject, *args, **kwargs) -> None:
         self.user = user
         super().__init__(*args, **kwargs)
 
-    def clean_user_id(self):
+    def clean_user_id(self) -> int:
         user_id = self.cleaned_data.get("user_id")
         if user_id != self.user.pk:
             raise forms.ValidationError(_("Logged in user does not match this link!"))
         return user_id
 
-    def clean_email(self):
+    def clean_email(self) -> str:
         email = self.cleaned_data.get("email")
         if email.lower() == self.user.email.lower():
             raise forms.ValidationError(_("This email is already set on this account."))
         return User.objects.normalize_email(email)
 
-    def clean(self):
+    def clean(self) -> CleanedData2:
         check = AccountService(self.user).check_confirmation_secret(
             self.cleaned_data.get("secret", ""), self.cleaned_data.get("email", "")
         )
@@ -407,7 +464,7 @@ class UserEmailConfirmationForm(forms.Form):
             raise forms.ValidationError(_("This email is used by another account!"))
         return self.cleaned_data
 
-    def save(self):
+    def save(self) -> None:
         old_email = self.user.email
         self.user.email = self.cleaned_data["email"]
         AccountService.check_against_blocklist(self.user, save=False)
@@ -433,14 +490,14 @@ class UserDeleteForm(forms.Form):
         help_text=_("Type the phrase above exactly as displayed."),
     )
 
-    def __init__(self, request, *args, **kwargs):
+    def __init__(self, request: HttpRequest, *args, **kwargs) -> None:
         self.request = request
         self.user = request.user
         super().__init__(*args, **kwargs)
         if not self.user.has_usable_password():
             del self.fields["password"]
 
-    def clean_password(self):
+    def clean_password(self) -> str:
         password = self.cleaned_data["password"]
         user = auth.authenticate(
             self.request, username=self.user.email, password=password
@@ -449,7 +506,7 @@ class UserDeleteForm(forms.Form):
             raise forms.ValidationError(_("You provided the wrong password!"))
         return ""
 
-    def clean_confirmation(self):
+    def clean_confirmation(self) -> str:
         confirmation = self.cleaned_data["confirmation"]
         if confirmation != self.CONFIRMATION_PHRASE:
             raise forms.ValidationError(
@@ -469,7 +526,7 @@ class SetPasswordForm(DjangoSetPasswordForm):
         required=False, widget=forms.HiddenInput(attrs={"autocomplete": "username"})
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super(SetPasswordForm, self).__init__(*args, **kwargs)
         if self.user is None:
             # Password reset link broken
@@ -488,10 +545,6 @@ class SetPasswordForm(DjangoSetPasswordForm):
             )
 
 
-class ProfilePhotoFileInput(forms.ClearableFileInput):
-    template_name = "account/widgets/image.html"
-
-
 class ProfileForm(forms.ModelForm):
     profile_text = forms.CharField(
         label=_("Profile text"),
@@ -503,10 +556,15 @@ class ProfileForm(forms.ModelForm):
 
     class Meta:
         model = User
-        fields = ["organization", "organization_url", "profile_text", "profile_photo"]
+        fields = [
+            "organization_name",
+            "organization_url",
+            "profile_text",
+            "profile_photo",
+        ]
         widgets = {
-            "profile_photo": ProfilePhotoFileInput(),
-            "organization": forms.TextInput(
+            "profile_photo": ImageFileInput,
+            "organization_name": forms.TextInput(
                 attrs={"placeholder": _("Organization"), "class": "form-control"}
             ),
             "organization_url": forms.URLInput(
@@ -516,12 +574,15 @@ class ProfileForm(forms.ModelForm):
 
     DIMS = (480, 960)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.fields["profile_photo"].label = _("Profile picture")
         self.fields["profile_photo"].help_text = _(
             "Image must be square and between 480 to 960 pixels " "in both dimensions."
         )
+        self.old_profile_photo = None
+        if self.instance.profile_photo:
+            self.old_profile_photo = self.instance.profile_photo
 
     def clean_profile_photo(self):
         image_field = self.cleaned_data["profile_photo"]
@@ -538,8 +599,15 @@ class ProfileForm(forms.ModelForm):
             raise forms.ValidationError(_("Image dimensions are too large."))
         return image_field
 
+    def save(self, commit=True):
+        if not self.cleaned_data["profile_photo"] and self.old_profile_photo:
+            self.instance.profile_photo = self.old_profile_photo
+            self.instance.delete_profile_photo()
+        return super().save(commit=commit)
+
 
 class AccountSettingsForm(forms.ModelForm):
     class Meta:
         model = User
         fields = ["language"]
+        widgets = {"language": BootstrapSelect}

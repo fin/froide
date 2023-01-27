@@ -3,18 +3,17 @@ import re
 from urllib.parse import urlencode
 
 from django.shortcuts import redirect
-from django.utils.translation import gettext_lazy as _
 from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
 
-from froide.helper.search.views import BaseSearchView
 from froide.helper.search.facets import make_filter_url
+from froide.helper.search.views import BaseSearchView
 from froide.publicbody.models import Jurisdiction
 
-from ..models import FoiRequest
-from ..feeds import LatestFoiRequestsFeed, LatestFoiRequestsFeedAtom
-from ..filters import get_filter_data, get_active_filters, FoiRequestFilterSet
 from ..documents import FoiRequestDocument
-
+from ..feeds import LatestFoiRequestsFeed, LatestFoiRequestsFeedAtom
+from ..filters import FoiRequestFilterSet, get_active_filters, get_filter_data
+from ..models import FoiRequest
 
 NUM_RE = re.compile(r"^\[?\#?(\d+)\]?$")
 
@@ -22,12 +21,7 @@ NUM_RE = re.compile(r"^\[?\#?(\d+)\]?$")
 class BaseListRequestView(BaseSearchView):
     search_name = "foirequest"
     template_name = "foirequest/list.html"
-    show_filters = {
-        "jurisdiction",
-        "status",
-        "category",
-        "campaign",
-    }
+    show_filters = {"jurisdiction", "status", "category", "campaign", "sort"}
     advanced_filters = {"jurisdiction", "category", "campaign"}
     has_facets = True
     facet_config = {

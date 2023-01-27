@@ -1,30 +1,27 @@
-from django.db.models import Q, Value, BooleanField, Case, When
-from django.utils.decorators import method_decorator
+from django.db.models import BooleanField, Case, Q, Value, When
 
-from rest_framework import serializers, permissions, viewsets
-
+from filingcabinet.api_renderers import RSSRenderer
 from filingcabinet.api_serializers import (
-    DocumentSerializer as FCDocumentSerializer,
-    PageSerializer as FCPageSerializer,
     DocumentCollectionSerializer as FCDocumentCollectionSerializer,
-    UpdateDocumentSerializer,
-    PagesMixin,
 )
+from filingcabinet.api_serializers import DocumentSerializer as FCDocumentSerializer
+from filingcabinet.api_serializers import PageSerializer as FCPageSerializer
+from filingcabinet.api_serializers import PagesMixin, UpdateDocumentSerializer
 from filingcabinet.api_views import (
-    DocumentViewSet as FCDocumentViewSet,
     DocumentCollectionViewSet as FCDocumentCollectionViewSet,
-    PageAnnotationViewSet as FCPageAnnotationViewSet,
 )
+from filingcabinet.api_views import DocumentViewSet as FCDocumentViewSet
+from filingcabinet.api_views import PageAnnotationViewSet as FCPageAnnotationViewSet
 from filingcabinet.models import Page, PageAnnotation
+from rest_framework import permissions, serializers, viewsets
 
-from froide.helper.auth import can_write_object, get_read_queryset, get_write_queryset
 from froide.helper.api_utils import SearchFacetListSerializer
+from froide.helper.auth import can_write_object, get_read_queryset, get_write_queryset
 from froide.helper.search.api_views import ESQueryMixin
-from froide.helper.cache import cache_anonymous_page
 
-from .models import Document, DocumentCollection
 from .documents import PageDocument
-from .filters import PageDocumentFilterset, get_document_read_qs, DocumentFilter
+from .filters import DocumentFilter, PageDocumentFilterset, get_document_read_qs
+from .models import Document, DocumentCollection
 
 
 class DocumentSerializer(FCDocumentSerializer):
@@ -91,9 +88,16 @@ class PageViewSet(ESQueryMixin, viewsets.GenericViewSet):
     search_document = PageDocument
     read_token_scopes = ["read:document"]
     searchfilterset_class = PageDocumentFilterset
+    renderer_classes = viewsets.GenericViewSet.renderer_classes + [RSSRenderer]
 
     def list(self, request, *args, **kwargs):
         return self.search_view(request)
+
+    def override_sqs(self):
+        has_query = self.request.GET.get("q")
+        if has_query and self.request.GET.get("format") == "rss":
+            self.sqs.sqs = self.sqs.sqs.sort()
+            self.sqs.sqs = self.sqs.sqs.sort("-created_at")
 
     def optimize_query(self, qs):
         return qs.prefetch_related("document")
@@ -114,13 +118,15 @@ class DocumentViewSet(FCDocumentViewSet):
     filterset_class = DocumentFilter
 
     def get_base_queryset(self):
-        return get_document_read_qs(self.request, detail=self.action == "retrieve")
+        read_unlisted = (
+            self.action == "retrieve" or self.can_read_unlisted_via_collection()
+        )
+        return get_document_read_qs(self.request, read_unlisted=read_unlisted)
 
     def get_queryset(self):
         qs = super().get_queryset()
         return qs.prefetch_related("original")
 
-    @method_decorator(cache_anonymous_page(60 * 60))
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
 
@@ -144,7 +150,6 @@ class DocumentCollectionViewSet(FCDocumentCollectionViewSet):
             scope="read:document",
         )
 
-    @method_decorator(cache_anonymous_page(60 * 60))
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 

@@ -1,12 +1,24 @@
 <template>
   <div class="row">
     <div class="col-md-12">
-      <input type="hidden" name="hide_public" v-model="hidePublic" id="id_hide_public"/>
+      <!-- FIXME: shouldn't be mutating props -->
+      <!-- eslint-disable vue/no-mutating-props -->
+      <input
+        type="hidden"
+        name="hide_public"
+        v-model="hidePublic"
+        id="id_hide_public" />
+      <!-- eslint-enable vue/no-mutating-props -->
       <div class="card mb-3" v-if="!hidePublic">
         <div class="card-body">
-          <div class="checkbox">
-            <label>
-              <input type="checkbox" name="public" id="id_public" v-model="publicValue"/>
+          <div class="form-check">
+            <input
+              type="checkbox"
+              name="public"
+              class="form-check-input"
+              id="id_public"
+              v-model="publicValue" />
+            <label class="form-check-label" for="id_public">
               {{ form.fields.public.label }}
             </label>
             <small class="form-text text-muted">
@@ -16,7 +28,11 @@
         </div>
       </div>
       <div v-else style="display: none">
-        <input type="checkbox" name="public" id="id_public" v-model="publicValue"/>
+        <input
+          type="checkbox"
+          name="public"
+          id="id_public"
+          v-model="publicValue" />
       </div>
     </div>
   </div>
@@ -34,9 +50,12 @@ export default {
       default: false
     }
   },
-  data () {
+  data() {
     return {
-      public: this.form.fields.public.value !== null ? this.form.fields.public.value : this.form.fields.public.initial
+      public:
+        this.form.fields.public.value !== null
+          ? this.form.fields.public.value
+          : this.form.fields.public.initial
     }
   },
   computed: {
@@ -44,7 +63,7 @@ export default {
       get() {
         return this.public
       },
-      set (value) {
+      set(value) {
         this.public = value
         this.$emit('update:initialPublic', value)
       }

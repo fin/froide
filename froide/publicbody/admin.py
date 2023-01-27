@@ -1,51 +1,61 @@
 import json
 
-from django.db import transaction
-from django.contrib import admin
-from django.shortcuts import redirect, render
-from django.http import HttpResponse
-from django.core.exceptions import PermissionDenied
-from django.conf import settings
-from django.db.models import Count
-from django.utils.translation import gettext_lazy as _, ngettext
-from django.utils import timezone
-from django.urls import reverse_lazy
 from django import forms
-from django.urls import reverse
-from django.urls import path
-from django.utils.html import format_html
+from django.conf import settings
+from django.contrib import admin
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
+from django.db.models import Count
+from django.http import HttpResponse
+from django.shortcuts import redirect, render
 from django.template.response import TemplateResponse
+from django.urls import path, reverse, reverse_lazy
+from django.utils import timezone
+from django.utils.html import format_html
+from django.utils.translation import gettext_lazy as _
+from django.utils.translation import ngettext
 
+from parler.admin import TranslatableAdmin
 from treebeard.admin import TreeAdmin
 from treebeard.forms import movenodeform_factory
-from parler.admin import TranslatableAdmin
+
+from froide.georegion.models import GeoRegion
 from froide.helper.admin_utils import (
+    ForeignKeyFilter,
+    TreeRelatedFieldListFilter,
     make_batch_tag_action,
+    make_choose_object_action,
     make_emptyfilter,
     make_nullfilter,
-    make_choose_object_action,
-    TreeRelatedFieldListFilter,
 )
-from froide.helper.widgets import TagAutocompleteWidget
+from froide.helper.csv_utils import dict_to_csv_stream, export_csv_response
 from froide.helper.search.utils import trigger_search_index_update_qs
-from froide.helper.csv_utils import export_csv_response, dict_to_csv_stream
+from froide.helper.widgets import AutocompleteMultiWidget, TagAutocompleteWidget
 
+from .csv_import import CSVImporter
 from .models import (
-    PublicBody,
-    PublicBodyTag,
-    TaggedPublicBody,
+    CategorizedPublicBody,
+    Category,
+    Classification,
     FoiLaw,
     Jurisdiction,
-    Classification,
-    Category,
-    CategorizedPublicBody,
     ProposedPublicBody,
+    PublicBody,
+    PublicBodyChangeProposal,
+    PublicBodyTag,
+    TaggedPublicBody,
 )
-from .csv_import import CSVImporter
-from .validators import validate_publicbodies
-
 
 CATEGORY_AUTOCOMPLETE_URL = reverse_lazy("api:category-autocomplete")
+
+
+class PublicBodyAdminSite(admin.AdminSite):
+    site_title = settings.SITE_NAME
+    site_header = _("Public Body Admin")
+    site_url = None
+
+
+pb_admin_site = PublicBodyAdminSite(name="pbadmin")
 
 
 class PublicBodyAdminForm(forms.ModelForm):
@@ -55,6 +65,11 @@ class PublicBodyAdminForm(forms.ModelForm):
         widgets = {
             "categories": TagAutocompleteWidget(
                 autocomplete_url=CATEGORY_AUTOCOMPLETE_URL
+            ),
+            "regions": AutocompleteMultiWidget(
+                autocomplete_url=reverse_lazy("api:georegion-autocomplete"),
+                model=GeoRegion,
+                allow_new=False,
             ),
         }
 
@@ -159,7 +174,7 @@ class PublicBodyBaseAdminMixin:
                     "wikidata_item",
                     "source_reference",
                     "extra_data",
-                    "change_proposals",
+                    "change_history",
                 ),
             },
         ),
@@ -185,17 +200,16 @@ class PublicBodyBaseAdminMixin:
         "request_count",
     )
     list_filter = (
-        make_emptyfilter(
-            "change_proposals", _("Has change proposals"), empty_value=dict
-        ),
+        make_nullfilter("change_proposals", _("Has change proposals")),
         "jurisdiction",
-        ("classification", TreeRelatedFieldListFilter),
-        "classification",
-        "categories",
         make_nullfilter("geo", _("Has geo coordinates")),
         make_nullfilter("regions", _("Has regions")),
         make_emptyfilter("email", "E-Mail"),
         make_emptyfilter("fax", "Fax"),
+        ("laws", ForeignKeyFilter),
+        ("classification", TreeRelatedFieldListFilter),
+        ("classification", ForeignKeyFilter),
+        "categories",
     )
     filter_horizontal = ("laws",)
     list_max_show_all = 5000
@@ -211,7 +225,7 @@ class PublicBodyBaseAdminMixin:
     )
     readonly_fields = ("_created_by", "created_at", "_updated_by", "updated_at")
 
-    actions = (
+    actions = [
         "assign_classification",
         "replace_publicbody",
         "export_csv",
@@ -219,7 +233,7 @@ class PublicBodyBaseAdminMixin:
         "tag_all",
         "show_georegions",
         "validate_publicbodies",
-    )
+    ]
 
     tag_all = make_batch_tag_action(
         field="categories", autocomplete_url=CATEGORY_AUTOCOMPLETE_URL
@@ -238,11 +252,12 @@ class PublicBodyBaseAdminMixin:
         qs = qs.select_related("classification", "jurisdiction")
         return qs
 
+    @admin.display(
+        description=_("requests"),
+        ordering="request_count",
+    )
     def request_count(self, obj):
         return obj.request_count
-
-    request_count.admin_order_field = "request_count"
-    request_count.short_description = _("requests")
 
     def get_urls(self):
         urls = super(PublicBodyBaseAdminMixin, self).get_urls()
@@ -280,7 +295,7 @@ class PublicBodyBaseAdminMixin:
             self.message_user(request, str(e))
         else:
             self.message_user(request, _("Public Bodies were imported."))
-        return redirect("admin:publicbody_publicbody_changelist")
+        return redirect("%s:publicbody_publicbody_changelist" % self.admin_site.name)
 
     def geo_match(self, request):
         from froide.georegion.models import GeoRegion
@@ -315,13 +330,19 @@ class PublicBodyBaseAdminMixin:
                     "api:jurisdiction-detail", kwargs={"pk": 0}
                 ),
                 "georegionAdminUrl": reverse(
-                    "admin:georegion_georegion_change", kwargs={"object_id": 0}
+                    "%s:georegion_georegion_change" % self.admin_site.name,
+                    kwargs={"object_id": 0},
                 ),
-                "publicbodyAdminUrl": reverse("admin:publicbody_publicbody_changelist"),
+                "publicbodyAdminUrl": reverse(
+                    "%s:publicbody_publicbody_changelist" % self.admin_site.name
+                ),
                 "publicbodyAdminChangeUrl": reverse(
-                    "admin:publicbody_publicbody_change", kwargs={"object_id": 0}
+                    "%s:publicbody_publicbody_change" % self.admin_site.name,
+                    kwargs={"object_id": 0},
                 ),
-                "publicbodyAddAdminUrl": reverse("admin:publicbody_publicbody_add"),
+                "publicbodyAddAdminUrl": reverse(
+                    "%s:publicbody_publicbody_add" % self.admin_site.name
+                ),
             }
         }
         ctx = {"app_label": opts.app_label, "opts": opts, "config": json.dumps(config)}
@@ -330,7 +351,7 @@ class PublicBodyBaseAdminMixin:
     def save_model(self, request, obj, form, change):
         obj._updated_by = request.user
         obj.updated_at = timezone.now()
-        if change is None:
+        if not change:
             obj._created_by = obj._updated_by
             obj.created_at = obj.updated_at
 
@@ -339,11 +360,11 @@ class PublicBodyBaseAdminMixin:
     def category_list(self, obj):
         return ", ".join(o.name for o in obj.categories.all())
 
+    @admin.action(description=_("Export to CSV"))
     def export_csv(self, request, queryset):
         return export_csv_response(PublicBody.export_csv(queryset))
 
-    export_csv.short_description = _("Export to CSV")
-
+    @admin.action(description=_("Remove from search index"))
     def remove_from_index(self, request, queryset):
         from django_elasticsearch_dsl.registries import registry
 
@@ -352,8 +373,7 @@ class PublicBodyBaseAdminMixin:
 
         self.message_user(request, _("Removed from search index"))
 
-    remove_from_index.short_description = _("Remove from search index")
-
+    @admin.action(description=_("Show georegions of"))
     def show_georegions(self, request, queryset):
         opts = self.model._meta
 
@@ -376,9 +396,9 @@ class PublicBodyBaseAdminMixin:
             request, "publicbody/admin/show_georegions.html", context
         )
 
-    show_georegions.short_description = _("Show georegions of")
-
     def validate_publicbodies(self, request, queryset):
+        from .validators import validate_publicbodies
+
         csv_stream = dict_to_csv_stream(validate_publicbodies(queryset))
         return export_csv_response(csv_stream, name="validation.csv")
 
@@ -390,6 +410,8 @@ class PublicBodyAdminMixin(PublicBodyBaseAdminMixin):
         return qs
 
 
+@admin.register(PublicBody)
+@admin.register(PublicBody, site=pb_admin_site)
 class PublicBodyAdmin(PublicBodyAdminMixin, admin.ModelAdmin):
     pass
 
@@ -451,7 +473,7 @@ class ProposedPublicBodyAdminMixin(PublicBodyBaseAdminMixin):
                 % {"count": result},
             )
 
-        return redirect("admin:publicbody_publicbody_change", pb.id)
+        return redirect("%s:publicbody_publicbody_change" % self.admin_site.name, pb.id)
 
     def _confirm_pb(self, pb, user):
         pb._updated_by = user
@@ -472,6 +494,7 @@ class ProposedPublicBodyAdminMixin(PublicBodyBaseAdminMixin):
             )
         return result
 
+    @admin.action(description=_("Confirm all selected"))
     def confirm_selected(self, request, queryset):
         queryset = queryset.filter(confirmed=False)
         for pb in queryset:
@@ -480,8 +503,6 @@ class ProposedPublicBodyAdminMixin(PublicBodyBaseAdminMixin):
         self.message_user(
             request, _("{} public bodies were confirmed.").format(queryset.count())
         )
-
-    confirm_selected.short_description = _("Confirm all selected")
 
     def send_message(self, request, pk):
         if not request.method == "POST":
@@ -499,13 +520,17 @@ class ProposedPublicBodyAdminMixin(PublicBodyBaseAdminMixin):
                 priority=False,
             )
             self.message_user(request, _("E-Mail was sent to public body creator."))
-        return redirect("admin:publicbody_proposedpublicbody_change", pb.id)
+        return redirect(
+            "%s:publicbody_proposedpublicbody_change" % self.admin_site.name, pb.id
+        )
 
 
+@admin.register(ProposedPublicBody)
 class ProposedPublicBodyAdmin(ProposedPublicBodyAdminMixin, admin.ModelAdmin):
     pass
 
 
+@admin.register(FoiLaw)
 class FoiLawAdmin(TranslatableAdmin):
     list_display = (
         "name",
@@ -513,6 +538,7 @@ class FoiLawAdmin(TranslatableAdmin):
         "priority",
         "law_type",
         "jurisdiction",
+        "num_publicbodies",
     )
     list_filter = ("meta", "law_type", "jurisdiction")
     raw_id_fields = ("mediator", "combined")
@@ -533,9 +559,22 @@ class FoiLawAdmin(TranslatableAdmin):
             "combined__translations",
             "combined__jurisdiction",
         )
-        return qs
+        return qs.annotate(num_publicbodies=Count("publicbody", distinct=True))
+
+    @admin.display(
+        description=_("public bodies"),
+        ordering="num_publicbodies",
+    )
+    def num_publicbodies(self, obj):
+        return format_html(
+            '<a href="{}">{}</a>',
+            reverse("%s:publicbody_publicbody_changelist" % self.admin_site.name)
+            + ("?laws={}".format(obj.id)),
+            obj.num_publicbodies,
+        )
 
 
+@admin.register(Jurisdiction)
 class JurisdictionAdmin(admin.ModelAdmin):
     prepopulated_fields = {"slug": ("name",)}
     list_filter = [
@@ -547,6 +586,7 @@ class JurisdictionAdmin(admin.ModelAdmin):
     raw_id_fields = ("region",)
 
 
+@admin.register(PublicBodyTag)
 class PublicBodyTagAdmin(admin.ModelAdmin):
     list_display = ["name", "slug", "is_topic", "rank"]
     list_filter = ["is_topic", "rank"]
@@ -555,6 +595,7 @@ class PublicBodyTagAdmin(admin.ModelAdmin):
     prepopulated_fields = {"slug": ["name"]}
 
 
+@admin.register(TaggedPublicBody)
 class TaggedPublicBodyAdmin(admin.ModelAdmin):
     raw_id_fields = ("content_object", "tag")
 
@@ -573,6 +614,8 @@ assign_category_parent = make_choose_object_action(
 )
 
 
+@admin.register(Classification)
+@admin.register(Classification, site=pb_admin_site)
 class ClassificationAdmin(TreeAdmin):
     fields = (
         "name",
@@ -594,22 +637,23 @@ class ClassificationAdmin(TreeAdmin):
         qs = super(ClassificationAdmin, self).get_queryset(request)
         return qs.annotate(num_publicbodies=Count("publicbody", distinct=True))
 
+    @admin.display(description=_("# public bodies"))
     def num_publicbodies(self, obj):
         """# of companies an expert has."""
 
         return obj.num_publicbodies
 
-    num_publicbodies.short_description = _("# public bodies")
-
     def publicbody_link(self, obj):
         return format_html(
             '<a href="{}">{}</a>',
-            reverse("admin:publicbody_publicbody_changelist")
+            reverse("%s:publicbody_publicbody_changelist" % self.admin_site.name)
             + ("?classification__id__exact={}".format(obj.id)),
             _("Public bodies with this classification"),
         )
 
 
+@admin.register(Category)
+@admin.register(Category, site=pb_admin_site)
 class CategoryAdmin(TreeAdmin):
     fields = (
         "name",
@@ -631,37 +675,31 @@ class CategoryAdmin(TreeAdmin):
     def get_queryset(self, request):
         """Use this so we can annotate with additional info."""
 
-        qs = super(CategoryAdmin, self).get_queryset(request)
+        qs = super().get_queryset(request)
         return qs.annotate(
             num_publicbodies=Count("categorized_publicbodies", distinct=True)
         )
 
+    @admin.display(description=_("# public bodies"))
     def num_publicbodies(self, obj):
         """# of companies an expert has."""
 
         return obj.num_publicbodies
 
-    num_publicbodies.short_description = _("# public bodies")
-
     def publicbody_link(self, obj):
         return format_html(
             '<a href="{}">{}</a>',
-            reverse("admin:publicbody_publicbody_changelist")
+            reverse("%s:publicbody_publicbody_changelist" % self.admin_site.name)
             + ("?categories__id__exact={}".format(obj.id)),
             _("Public bodies with this category"),
         )
 
 
+@admin.register(CategorizedPublicBody)
 class CategorizedPublicBodyAdmin(admin.ModelAdmin):
     raw_id_fields = ("content_object", "tag")
 
 
-admin.site.register(PublicBody, PublicBodyAdmin)
-admin.site.register(ProposedPublicBody, ProposedPublicBodyAdmin)
-admin.site.register(FoiLaw, FoiLawAdmin)
-admin.site.register(Jurisdiction, JurisdictionAdmin)
-admin.site.register(PublicBodyTag, PublicBodyTagAdmin)
-admin.site.register(TaggedPublicBody, TaggedPublicBodyAdmin)
-admin.site.register(Classification, ClassificationAdmin)
-admin.site.register(Category, CategoryAdmin)
-admin.site.register(CategorizedPublicBody, CategorizedPublicBodyAdmin)
+@admin.register(PublicBodyChangeProposal)
+class PublicBodyChangeProposalAdmin(admin.ModelAdmin):
+    raw_id_fields = ("publicbody", "user", "classification", "categories", "regions")

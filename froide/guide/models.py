@@ -1,18 +1,19 @@
 import json
 import re
 
-from django.db import models
 from django.conf import settings
+from django.db import models
+from django.template import Context, Template
 from django.urls import reverse
-from django.utils.translation import gettext_lazy as _, pgettext_lazy
 from django.utils import timezone
 from django.utils.functional import cached_property
-from django.template import Template, Context
+from django.utils.translation import gettext_lazy as _
+from django.utils.translation import pgettext_lazy
 
 from froide.foirequest.models import FoiMessage, MessageTag
 from froide.helper.email_sending import MailIntent
-from froide.publicbody.models import Jurisdiction, PublicBody, Category
 from froide.letter.models import LetterTemplate
+from froide.publicbody.models import Category, Jurisdiction, PublicBody
 
 
 def compile_text(text):
@@ -77,6 +78,14 @@ def render_with_context(method):
     return wrapper
 
 
+class LazyStr:
+    def __init__(self, func):
+        self.func = func
+
+    def __str__(self):
+        return str(self.func())
+
+
 class Guidance(models.Model):
     message = models.ForeignKey(FoiMessage, on_delete=models.CASCADE)
     action = models.ForeignKey(Action, null=True, blank=True, on_delete=models.CASCADE)
@@ -122,10 +131,14 @@ class Guidance(models.Model):
             "user": user,
             "name": user.get_full_name(),
             "message": self.message,
-            "action_url": "{}-guidance".format(self.message.get_autologin_url()),
+            "action_url": LazyStr(
+                lambda: "{}-guidance".format(self.message.get_autologin_url())
+            ),
         }
         if self.action and self.action.letter_template_id:
-            ctx["action_url"] = user.get_autologin_url(self.get_letter_url())
+            ctx["action_url"] = LazyStr(
+                lambda: user.get_autologin_url(self.get_letter_url())
+            )
         return ctx
 
     @render_with_context

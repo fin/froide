@@ -3,12 +3,11 @@
 {% load i18n %}
 {% load static %}
 {% load foirequest_tags %}
-{% load filingcabinet %}
 
 {% block title %}{% blocktrans with name=attachment.name title=foirequest.title %}{{ name }} in request „{{ title }}“{% endblocktrans %}{% endblock %}
 
 {% block body %}
-<div class="breadcrumb-container">
+<div class="bg-gray-100">
   {% blocktrans with date=message.timestamp|date:"SHORT_DATE_FORMAT" asvar breadcrumb_label %}Attachment of message from {{ date }}{% endblocktrans %}
   {% include "foirequest/header/breadcrumb.html" with object=foirequest last_item=breadcrumb_label %}
 </div>
@@ -29,7 +28,7 @@
     </div>
   {% endif %}
 
-  {% if foirequest|can_write_foirequest:request %}
+  {% if foirequest|can_write_foirequest:request or foirequest|can_moderate_pii_foirequest:request %}
 
     {% if foirequest.awaits_classification %}
       <div class="alert alert-warning">
@@ -61,7 +60,7 @@
 {% if attachment.can_embed %}
   {% if attachment.is_pdf %}
     <div class="container-sm-full d-none d-md-block">
-      <iframe src="{% get_pdf_viewer attachment_url %}" frameborder="0" style="width: 100%; height: 90vh; border: 0;">
+      <iframe src="{{ attachment_url }}" frameborder="0" style="width: 100%; height: 90vh; border: 0;">
       </iframe>
     </div>
     <div class="container d-block d-md-none text-center">
@@ -78,7 +77,7 @@
 
 <div class="container mb-5">
   {% if attachment.can_embed %}
-    <div class="text-right d-none d-md-block">
+    <div class="text-end d-none d-md-block">
       <small>
         {# expose direct links through redirects in case they get copied #}
         <a href="{{ attachment.get_absolute_domain_auth_url }}">

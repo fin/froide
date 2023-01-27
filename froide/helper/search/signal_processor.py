@@ -1,29 +1,13 @@
 from contextlib import contextmanager
+from functools import partial
 
-from django.db import models
-from django.db import transaction
-
-from elasticsearch_dsl.connections import connections
+from django.db import models, transaction
 
 from django_elasticsearch_dsl.registries import registry
 from django_elasticsearch_dsl.signals import RealTimeSignalProcessor
+from elasticsearch_dsl.connections import connections
 
-from ..tasks import search_instance_save, search_instance_delete
-
-
-def run_commit_hooks(testcase):
-    """
-    Fake transaction commit to run delayed on_commit functions
-    :return:
-    """
-    from unittest import mock
-
-    for db_name in reversed(testcase._databases_names()):
-        with mock.patch(
-            "django.db.backends.base.base.BaseDatabaseWrapper.validate_no_atomic_block",
-            lambda a: False,
-        ):
-            transaction.get_connection(using=db_name).run_and_clear_commit_hooks()
+from ..tasks import search_instance_delete, search_instance_save
 
 
 @contextmanager
@@ -31,8 +15,6 @@ def realtime_search(testcase, test=True):
     signal_processor = CelerySignalProcessor(connections)
     signal_processor.setup()
     yield
-    if test:
-        run_commit_hooks(testcase)
     signal_processor.teardown()
 
 
@@ -66,7 +48,7 @@ class CelerySignalProcessor(RealTimeSignalProcessor):
         Update the related objects either.
         """
         transaction.on_commit(
-            lambda: search_instance_save.delay(instance._meta.label_lower, instance.pk)
+            partial(search_instance_save.delay, instance._meta.label_lower, instance.pk)
         )
 
     def handle_pre_delete(self, sender, instance, **kwargs):
@@ -84,7 +66,7 @@ class CelerySignalProcessor(RealTimeSignalProcessor):
         if instance.pk is None:
             return
         transaction.on_commit(
-            lambda: search_instance_delete.delay(
-                instance._meta.label_lower, instance.pk
+            partial(
+                search_instance_delete.delay, instance._meta.label_lower, instance.pk
             )
         )

@@ -7,30 +7,31 @@
 {% load team_tags %}
 {% load form_helper %}
 {% load block_helper %}
+{% load frontendbuild %}
 {% load humanize %}
 
 {% block title %}{{ object.title }}{% endblock %}
 
-{% block metadescription %}{{ object.description }}{% endblock %}
+{% block metadescription %}{{ object.get_description }}{% endblock %}
 
 {% block extra_head %}
-  {% if not object.is_foi or object.same_as %}
+  {% if not object.is_foi or object.same_as or object.no_index %}
     <meta name="robots" content="noindex"/>
   {% endif %}
 
-  <!-- Open Graph / Facebook -->
+  {# Open Graph / Facebook #}
   <meta property="og:type" content="website">
   <meta property="og:url" content="{{ SITE_URL }}{% url 'foirequest-show' slug=object.slug %}">
   <meta property="og:title" content="{{ object.title }}">
-  <meta property="og:description" content="{{ object.description }}">
-  
+  <meta property="og:description" content="{{ object.get_description }}">
 
-  <!-- Twitter -->
+
+  {# Twitter #}
   <meta property="twitter:url" content="{{ SITE_URL }}{% url 'foirequest-show' slug=object.slug %}">
   <meta property="twitter:title" content="{{ object.title }}">
-  <meta property="twitter:description" content="{{ object.description }}">
+  <meta property="twitter:description" content="{{ object.get_description }}">
   {% block share_image %}
-    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:card" content="summary">
     {% if SITE_LOGO %}<meta property="og:image" content="{{ SITE_LOGO }}">{% endif %}
   {% endblock share_image %}
 
@@ -63,19 +64,23 @@
 {% block body %}
   {% block app_body %}
 
-    <!-- breadcrumb -->
-    <div class="breadcrumb-container">
+    {# breadcrumb #}
+    <div class="bg-gray-100">
       {% include "foirequest/header/breadcrumb.html" %}
     </div>
 
-    <!-- header,  -->
-    <div class="breadcrumb-container breadcrumb-container-header">
+    {# header,  #}
+    <div class="bg-gray-100 bg-gray-100-header">
       {% include "foirequest/header/header.html" %}
 
       {% include "foirequest/header/tabs.html" %}
     </div>
 
-    <!-- body, tabs content -->
+    {% if show_withdrawal_popup %}
+     {% include "foirequest/snippets/withdrawal_popup.html" %}
+    {% endif %}
+
+    {# body, tabs content #}
     {% include "foirequest/body/body.html" %}
 
   {% endblock app_body %}
@@ -84,16 +89,7 @@
 {% block scripts %}
   {{ block.super }}
   {% if object|can_write_foirequest:request or object|can_moderate_foirequest:request %}
-    {% addtoblock "js" %}
-      {% with object.get_set_tags_form as set_tags_form %}
-        {{ set_tags_form.media.js }}
-      {% endwith %}
-    {% endaddtoblock %}
-    {% addtoblock "css" %}
-      {% with object.get_set_tags_form as set_tags_form %}
-        {{ set_tags_form.media.css }}
-      {% endwith %}
-    {% endaddtoblock %}
+    {% addfrontendbuild "tagautocomplete.js" %}
 
     {% if foirequest_requestpage_tour %}
       {% addtoblock "js" %}
@@ -106,26 +102,11 @@
       {% endaddtoblock %}
     {% endif %}
 
+    {% addfrontendbuild "publicbody.js" %}
+    {% addfrontendbuild "messageredaction.js" %}
 
-    {% addtoblock "js" %}
-      <script src="{% static 'js/common.js' %}"></script>
-    {% endaddtoblock %}
-    {% addtoblock "js" %}
-      <script src="{% static 'js/publicbody.js' %}" defer></script>
-    {% endaddtoblock %}
-    {% addtoblock "js" %}
-      <script src="{% static 'js/messageredaction.js' %}" defer></script>
-    {% endaddtoblock %}
-    {% addtoblock "css" %}
-      <link rel="stylesheet" href="{% static 'css/messageredaction.css' %}"/>
-    {% endaddtoblock %}
   {% endif %}
 
-  {% addtoblock "css" %}
-    <link rel="stylesheet" href="{% static 'css/request-alpha.css' %}"/>
-  {% endaddtoblock %}
+  {% addfrontendbuild "request.js" %}
 
-  {% addtoblock "js" %}
-    <script src="{% static 'js/request-alpha.js' %}" defer></script>
-  {% endaddtoblock %}
 {% endblock %}

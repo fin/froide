@@ -1,49 +1,49 @@
 import json
 import logging
+from functools import partial
 
 from django.conf import settings
-from django.shortcuts import get_object_or_404, redirect, render
-from django.views.decorators.http import require_POST
-from django.utils.translation import gettext as _
-from django.http import Http404, JsonResponse, HttpResponse
-from django.urls import reverse
 from django.contrib import messages
-from django.templatetags.static import static
-from django.template.defaultfilters import slugify
+from django.db import transaction
+from django.http import Http404, HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils.translation import gettext as _
+from django.views.decorators.http import require_POST
 
-from froide.helper.utils import render_400, is_ajax
-from froide.helper.storage import add_number_to_filename
+from froide.foirequest.auth import can_read_foirequest
+from froide.foirequest.utils import redact_plaintext_with_request
+from froide.helper.storage import make_unique_filename
+from froide.helper.text_utils import slugify
+from froide.helper.utils import is_ajax, render_400, render_403
 from froide.upload.forms import get_uppy_i18n
 
-from ..models import FoiRequest, FoiMessage, FoiAttachment, FoiEvent
-from ..models.attachment import POSTAL_CONTENT_TYPES, IMAGE_FILETYPES, PDF_FILETYPES
-from ..api_views import FoiMessageSerializer, FoiAttachmentSerializer
-from ..forms import (
-    get_send_message_form,
-    get_postal_reply_form,
-    get_postal_message_form,
-    get_escalation_message_form,
-    get_postal_attachment_form,
-    get_message_sender_form,
-    get_message_recipient_form,
-    TransferUploadForm,
-    EditMessageForm,
-    RedactMessageForm,
-    PostalUploadForm,
-)
-from ..utils import check_throttle
-from ..tasks import convert_images_to_pdf_task
-from ..pdf_generator import LetterPDFGenerator
-from ..services import ResendBouncedMessageService
+from ..api_views import FoiAttachmentSerializer, FoiMessageSerializer
 from ..decorators import (
-    allow_write_foirequest,
     allow_moderate_foirequest,
+    allow_write_foirequest,
     allow_write_or_moderate_foirequest,
     allow_write_or_moderate_pii_foirequest,
 )
-
+from ..forms import (
+    EditMessageForm,
+    PostalUploadForm,
+    RedactMessageForm,
+    TransferUploadForm,
+    get_escalation_message_form,
+    get_message_recipient_form,
+    get_message_sender_form,
+    get_postal_attachment_form,
+    get_postal_message_form,
+    get_postal_reply_form,
+    get_send_message_form,
+)
+from ..models import FoiAttachment, FoiEvent, FoiMessage, FoiRequest
+from ..models.attachment import IMAGE_FILETYPES, PDF_FILETYPES, POSTAL_CONTENT_TYPES
+from ..services import ResendBouncedMessageService
+from ..tasks import convert_images_to_pdf_task
+from ..utils import check_throttle
 from .request import show_foirequest
-
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +65,10 @@ def send_message(request, foirequest):
             request, messages.SUCCESS, _("Your message has been sent.")
         )
         return redirect(mes)
-    else:
-        return show_foirequest(
-            request, foirequest, context={"send_message_form": form}, status=400
-        )
+
+    return show_foirequest(
+        request, foirequest, context={"send_message_form": form}, status=400
+    )
 
 
 @require_POST
@@ -199,16 +199,12 @@ def upload_postal_message(request, foirequest):
     )
 
 
-def get_attachment_update_response(request, added, updated):
+def get_attachment_update_response(request, added_attachments):
     return JsonResponse(
         {
             "added": [
                 FoiAttachmentSerializer(a, context={"request": request}).data
-                for a in added
-            ],
-            "updated": [
-                FoiAttachmentSerializer(u, context={"request": request}).data
-                for u in updated
+                for a in added_attachments
             ],
         }
     )
@@ -226,36 +222,20 @@ def add_postal_reply_attachment(request, foirequest, message_id):
 
     form = get_postal_attachment_form(request.POST, request.FILES, foimessage=message)
     if form.is_valid():
-        result = form.save(message)
-        added, updated = result
+        added = form.save(message)
 
         FoiEvent.objects.create_event(
             FoiEvent.EVENTS.ATTACHMENT_UPLOADED,
             foirequest,
             message=message,
             user=request.user,
-            **{"added": str(added), "updated": str(updated)}
+            **{"added": str(added)}
         )
 
         if is_ajax(request):
-            return get_attachment_update_response(request, added, updated)
+            return get_attachment_update_response(request, added)
 
-        added_count = len(added)
-        updated_count = len(updated)
-
-        if updated_count > 0 and not added_count:
-            status_message = (
-                _("You updated %d document(s) on this message") % updated_count
-            )
-        elif updated_count > 0 and added_count > 0:
-            status_message = _(
-                "You added %(added)d and updated %(updated)d "
-                "document(s) on this message"
-            ) % {"updated": updated_count, "added": added_count}
-        elif added_count > 0:
-            status_message = (
-                _("You added %d document(s) to this message.") % added_count
-            )
+        status_message = _("You added %d document(s) to this message.") % len(added)
         messages.add_message(request, messages.SUCCESS, status_message)
         return redirect(message)
 
@@ -273,7 +253,7 @@ def add_postal_reply_attachment(request, foirequest, message_id):
 def convert_to_pdf(request, foirequest, message, data):
     att_ids = [a["id"] for a in data["images"]]
     title = data.get("title") or _("letter")
-    names = set(a.name for a in message.attachments)
+    existing_names = {a.name for a in message.attachments}
 
     atts = message.foiattachment_set.filter(
         id__in=att_ids, filetype__startswith="image/"
@@ -282,13 +262,7 @@ def convert_to_pdf(request, foirequest, message, data):
     att_ids = [aid for aid in att_ids if aid in safe_att_ids]
 
     name = "{}.pdf".format(slugify(title))
-
-    i = 0
-    while True:
-        if name not in names:
-            break
-        i += 1
-        name = add_number_to_filename(name, i)
+    name = make_unique_filename(name, existing_names)
 
     can_approve = not foirequest.not_publishable
     att = FoiAttachment.objects.create(
@@ -305,8 +279,15 @@ def convert_to_pdf(request, foirequest, message, data):
     )
     instructions = {d["id"]: d for d in data["images"] if d["id"] in att_ids}
     instructions = [instructions[i] for i in att_ids]
-    convert_images_to_pdf_task.delay(
-        att_ids, att.id, instructions, can_approve=can_approve
+
+    transaction.on_commit(
+        partial(
+            convert_images_to_pdf_task.delay,
+            att_ids,
+            att.id,
+            instructions,
+            can_approve=can_approve,
+        )
     )
 
     attachment_data = FoiAttachmentSerializer(att, context={"request": request}).data
@@ -314,18 +295,17 @@ def convert_to_pdf(request, foirequest, message, data):
 
 
 def add_tus_attachment(request, foirequest, message, data):
-    form = TransferUploadForm(data=data, user=request.user)
+    form = TransferUploadForm(data=data, foimessage=message, user=request.user)
     if form.is_valid():
-        result = form.save(message)
-        added, updated = result
+        added = form.save(message)
         FoiEvent.objects.create_event(
             FoiEvent.EVENTS.ATTACHMENT_UPLOADED,
             foirequest,
             message=message,
             user=request.user,
-            **{"added": str(added), "updated": str(updated)}
+            **{"added": str(added)}
         )
-        return get_attachment_update_response(request, added, updated)
+        return get_attachment_update_response(request, added)
 
     return JsonResponse({"error": True, "message": str(form.errors)})
 
@@ -364,10 +344,11 @@ def upload_attachments(request, foirequest, message_id):
             "document_filetypes": POSTAL_CONTENT_TYPES,
             "image_filetypes": IMAGE_FILETYPES,
             "pdf_filetypes": PDF_FILETYPES,
+            "allowed_filetypes": ["application/pdf", "image/*"]
+            + message.get_extra_content_types(),
             "attachment_form_prefix": attachment_form.prefix,
             "tusChunkSize": settings.DATA_UPLOAD_MAX_MEMORY_SIZE - (500 * 1024),
         },
-        "resources": {"pdfjsWorker": static("js/pdf.worker.min.js")},
         "url": {
             "getMessage": reverse("api:message-detail", kwargs={"pk": message.id}),
             "getAttachment": reverse("api:attachment-detail", kwargs={"pk": 0}),
@@ -504,7 +485,7 @@ def set_message_recipient(request, foirequest, message_id):
             public_body=message.recipient_public_body,
         )
         return redirect(message)
-    messages.add_message(request, messages.ERROR, form._errors["sender"][0])
+    messages.add_message(request, messages.ERROR, form._errors["recipient"][0])
     return render_400(request)
 
 
@@ -547,6 +528,22 @@ def edit_message(request, foirequest, message_id):
 @allow_write_or_moderate_pii_foirequest
 def redact_message(request, foirequest, message_id):
     message = get_object_or_404(FoiMessage, request=foirequest, pk=message_id)
+    if message.is_response and request.POST.get("unredact_closing"):
+        message.plaintext_redacted = redact_plaintext_with_request(
+            message.plaintext,
+            foirequest,
+            redact_closing=False,
+        )
+        message.clear_render_cache()
+        message.save()
+        FoiEvent.objects.create_event(
+            FoiEvent.EVENTS.MESSAGE_REDACTED,
+            foirequest,
+            message=message,
+            user=request.user,
+            **{"action": "unredact_closing"}
+        )
+        return redirect(message.get_absolute_url())
     form = RedactMessageForm(request.POST)
     if form.is_valid():
         form.save(message)
@@ -562,6 +559,8 @@ def redact_message(request, foirequest, message_id):
 
 @allow_write_foirequest
 def download_message_pdf(request, foirequest, message_id):
+    from ..pdf_generator import LetterPDFGenerator
+
     message = get_object_or_404(
         FoiMessage, request=foirequest, pk=message_id, is_response=False
     )
@@ -617,3 +616,11 @@ def resend_message(request, foirequest, message_id):
 
     messages.add_message(request, messages.SUCCESS, _("The message has been re-sent."))
     return redirect(sent_message)
+
+
+def message_shortlink(request, obj_id):
+    foimessage = get_object_or_404(FoiMessage, pk=obj_id)
+    if not can_read_foirequest(foimessage.request, request):
+        return render_403(request)
+    url = foimessage.get_absolute_url()
+    return redirect(url)

@@ -2,17 +2,19 @@ from collections import namedtuple
 
 from django import forms
 from django.utils import timezone
-from django.utils.translation import gettext_lazy as _, pgettext
+from django.utils.translation import gettext_lazy as _
+from django.utils.translation import pgettext
 
-from taggit.models import Tag
 import django_filters
 from elasticsearch_dsl.query import Q
+from taggit.models import Tag
 
 from froide.account.models import User
-from froide.publicbody.models import PublicBody, Category, Jurisdiction
 from froide.campaign.models import Campaign
 from froide.helper.search.filters import BaseSearchFilterSet
-from froide.helper.widgets import DateRangeWidget
+from froide.helper.widgets import BootstrapSelect, DateRangeWidget
+from froide.organization.models import Organization
+from froide.publicbody.models import Category, Classification, Jurisdiction, PublicBody
 
 from .models import FoiRequest
 from .widgets import DropDownFilterWidget
@@ -170,18 +172,26 @@ class BaseFoiRequestFilterSet(BaseSearchFilterSet):
     jurisdiction = django_filters.ModelChoiceFilter(
         queryset=Jurisdiction.objects.get_visible(),
         to_field_name="slug",
+        label=_("jurisdiction"),
         empty_label=_("all jurisdictions"),
-        widget=forms.Select(
-            attrs={"label": _("jurisdiction"), "class": "form-control"}
-        ),
+        widget=BootstrapSelect,
         method="filter_jurisdiction",
     )
     category = django_filters.ModelChoiceFilter(
         queryset=Category.objects.get_category_list(),
         to_field_name="slug",
+        label=_("category"),
         empty_label=_("all categories"),
-        widget=forms.Select(attrs={"label": _("category"), "class": "form-control"}),
+        widget=BootstrapSelect,
         method="filter_category",
+    )
+    classification = django_filters.ModelChoiceFilter(
+        queryset=Classification.objects.all(),
+        to_field_name="slug",
+        empty_label=_("all classifications"),
+        label=_("classification"),
+        widget=BootstrapSelect,
+        method="filter_classification",
     )
     campaign = django_filters.ModelChoiceFilter(
         queryset=Campaign.objects.get_filter_list(),
@@ -189,7 +199,8 @@ class BaseFoiRequestFilterSet(BaseSearchFilterSet):
         null_value="-",
         empty_label=_("all/no campaigns"),
         null_label=_("no campaign"),
-        widget=forms.Select(attrs={"label": _("campaign"), "class": "form-control"}),
+        label=_("campaign"),
+        widget=BootstrapSelect,
         method="filter_campaign",
     )
     tag = django_filters.ModelChoiceFilter(
@@ -210,6 +221,12 @@ class BaseFoiRequestFilterSet(BaseSearchFilterSet):
         method="filter_user",
         widget=forms.HiddenInput(),
     )
+    organization = django_filters.ModelChoiceFilter(
+        queryset=Organization.objects.get_public(),
+        to_field_name="slug",
+        method="filter_organization",
+        widget=forms.HiddenInput(),
+    )
 
     first = django_filters.DateFromToRangeFilter(
         method="filter_first",
@@ -227,7 +244,7 @@ class BaseFoiRequestFilterSet(BaseSearchFilterSet):
         ],
         label=_("sort"),
         empty_label=_("default sort"),
-        widget=forms.Select(attrs={"label": _("sort"), "class": "form-control"}),
+        widget=BootstrapSelect,
         method="add_sort",
     )
 
@@ -239,9 +256,9 @@ class BaseFoiRequestFilterSet(BaseSearchFilterSet):
             "jurisdiction",
             "campaign",
             "category",
+            "classification",
             "tag",
             "publicbody",
-            "first",
         ]
 
     def __init__(self, *args, **kwargs):
@@ -264,6 +281,9 @@ class BaseFoiRequestFilterSet(BaseSearchFilterSet):
     def filter_category(self, qs, name, value):
         return qs.filter(categories=value.id)
 
+    def filter_classification(self, qs, name, value):
+        return qs.filter(classification=value.id)
+
     def filter_tag(self, qs, name, value):
         return qs.filter(tags=value.id)
 
@@ -272,6 +292,15 @@ class BaseFoiRequestFilterSet(BaseSearchFilterSet):
 
     def filter_user(self, qs, name, value):
         return qs.filter(user=value.id)
+
+    def filter_organization(self, qs, name, value):
+        all_members = list(
+            value.active_memberships.filter(user__private=False).values_list(
+                "user_id", flat=True
+            )
+        )
+        filtered_qs = qs.filter(user=all_members)
+        return filtered_qs
 
     def filter_first(self, qs, name, value):
         range_kwargs = {}

@@ -1,5 +1,7 @@
 {% load i18n %}
 
+{% load frontendbuild %}
+
 <div style="display: none">
 {% include "django/forms/widgets/input.html" %}
 </div>
@@ -11,6 +13,10 @@
   data-nochoices="{% trans 'No results' %}"
   data-itemselect="{% trans 'Press to select' %}"
   data-fetchurl="{{ autocomplete_url }}"
-  id="{{ widget.attrs.id }}_select" multiple>
-  {% for tag in tags %}<option value="{{ tag }}" selected>{{ tag }}</option>{% endfor %}
+  data-allownew="{% if allow_new %}true{% else %}false{% endif %}"
+  data-queryparam="{{ query_param }}"
+  {% if max_item_count %}data-maxitemcount="{{ max_item_count }}"{% endif %}
+  id="{{ widget.attrs.id }}_select"
+  {% if max_item_count != 1 %} multiple{% endif %}>
+  {% for value in values %}<option value="{{ value.value }}" selected>{{ value.label }}</option>{% endfor %}
 </select>

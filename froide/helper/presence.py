@@ -1,10 +1,10 @@
+import time
 from collections import defaultdict
 from datetime import timedelta
-import time
 
 from django.conf import settings
-from django.utils import timezone
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 from channels.db import database_sync_to_async
 
@@ -199,7 +199,7 @@ class DummyExpiringKeysManager(BaseExpiringKeysManager):
 
     async def remove_key_value(self, key, value):
         try:
-            if self.keys[self.prefix][key] == value:
+            if self.keys[self.prefix][key][1] == value:
                 del self.keys[self.prefix][key]
         except KeyError:
             pass

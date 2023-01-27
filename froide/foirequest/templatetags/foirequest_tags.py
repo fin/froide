@@ -1,42 +1,43 @@
-from collections import defaultdict
 import json
 import re
+from collections import defaultdict
 
 from django import template
-from django.utils.safestring import mark_safe
-from django.template.defaultfilters import urlizetrunc, truncatechars_html
-from django.utils.translation import gettext as _
-from django.utils.html import format_html
 from django.contrib.contenttypes.models import ContentType
+from django.db.models import Case, Value, When
+from django.template.defaultfilters import truncatechars_html
+from django.utils.html import format_html
+from django.utils.safestring import mark_safe
+from django.utils.translation import gettext as _
 
+import bleach
 from django_comments import get_model
 
-from froide.helper.text_utils import split_text_by_separator
 from froide.helper.text_diff import mark_differences
+from froide.helper.text_utils import split_text_by_separator
 
-from ..forms import EditMessageForm
-from ..models import FoiRequest, FoiMessage, DeliveryStatus
-from ..foi_mail import get_alternative_mail
 from ..auth import (
-    can_read_foirequest,
-    can_write_foirequest,
+    can_manage_foiproject,
     can_manage_foirequest,
-    can_read_foirequest_anonymous,
-    can_read_foirequest_authenticated,
+    can_mark_not_foi,
     can_moderate_foirequest,
     can_moderate_pii_foirequest,
-    can_mark_not_foi,
     can_read_foiproject,
-    can_write_foiproject,
-    can_manage_foiproject,
     can_read_foiproject_authenticated,
+    can_read_foirequest,
+    can_read_foirequest_anonymous,
+    can_read_foirequest_authenticated,
+    can_write_foiproject,
+    can_write_foirequest,
 )
+from ..foi_mail import get_alternative_mail
+from ..forms import AssignProjectForm, EditMessageForm
+from ..models import DeliveryStatus, FoiMessage, FoiRequest
+from ..moderation import get_moderation_triggers
 
 Comment = get_model()
 
 register = template.Library()
-
-CONTENT_CACHE_THRESHOLD = 5000
 
 
 def unify(text):
@@ -58,6 +59,13 @@ def highlight_request(message, request):
     redacted_content = unify(message.get_content())
 
     description = unify(message.request.description)
+    redacted_description = unify(message.request.get_description())
+    description_with_markup = markup_redacted_content(
+        description,
+        redacted_description,
+        authenticated_read=auth_read,
+        message_id=message.id,
+    )
 
     if auth_read:
         content = real_content
@@ -93,8 +101,8 @@ def highlight_request(message, request):
     html.append(
         format_html(
             """<div class="highlight">{description}</div><div class="collapse" id="letter_end">{post}</div>
-<div class="d-print-none"><a data-toggle="collapse" href="#letter_end" aria-expanded="false" aria-controls="letter_end" class="muted hideparent">{show_letter}</a>""",
-            description=description,
+<div class="d-print-none"><a data-bs-toggle="collapse" href="#letter_end" aria-expanded="false" aria-controls="letter_end" class="muted hideparent">{show_letter}</a>""",
+            description=description_with_markup,
             post=html_post,
             show_letter=_("[... Show complete request text]"),
         )
@@ -113,28 +121,23 @@ def highlight_request(message, request):
     return mark_safe("".join(html))
 
 
-def render_message_content(message, authenticated_read=False):
-    if authenticated_read and message.content_rendered_auth is not None:
-        return mark_safe(message.content_rendered_auth)
-    if not authenticated_read and message.content_rendered_anon is not None:
-        return mark_safe(message.content_rendered_anon)
+def render_message_content(message, authenticated_read=False, render_footer=True):
+    cached_content = message.get_cached_rendered_content(authenticated_read)
+    if cached_content is not None:
+        return mark_safe(cached_content)
 
     real_content = unify(message.get_real_content())
     redacted_content = unify(message.get_content())
-    needs_caching = len(real_content) > CONTENT_CACHE_THRESHOLD
 
     content = markup_redacted_content(
         real_content,
         redacted_content,
         authenticated_read=authenticated_read,
         message_id=message.id,
+        render_footer=render_footer,
     )
-    if needs_caching:
-        if authenticated_read:
-            update = {"content_rendered_auth": content}
-        else:
-            update = {"content_rendered_anon": content}
-        FoiMessage.objects.filter(id=message.id).update(**update)
+
+    message.set_cached_rendered_content(authenticated_read, content)
 
     return content
 
@@ -150,7 +153,9 @@ def redact_message(message, request):
 @register.simple_tag
 def redact_message_short(message, request):
     authenticated_read = is_authenticated_read(message, request)
-    content = render_message_content(message, authenticated_read=authenticated_read)
+    content = render_message_content(
+        message, authenticated_read=authenticated_read, render_footer=False
+    )
 
     subject, redacted_subject = "", ""
     if message.request.title not in message.subject:
@@ -190,11 +195,23 @@ MAILTO_RE = re.compile(r'<a href="mailto:([^"]+)">[^<]+</a>')
 
 def urlizetrunc_no_mail(content, chars, **kwargs):
     """
-    Remove mailto links, makes it to easy to accidentally reply
-    with your own email client.
+    Transform urls in the text to proper links, marking them with the `data-urlized` attribute
+
+    This will not create mailto links, as they make it to easy to accidentally
+    reply with your own email client.
     """
-    result = urlizetrunc(content, chars, **kwargs)
-    return mark_safe(MAILTO_RE.sub("\\1", result))
+
+    def mark_as_urlized(attrs, new=False):
+        attrs[(None, "class")] = "urlized"
+        return attrs
+
+    result = bleach.linkify(
+        content,
+        parse_email=False,
+        callbacks=[bleach.callbacks.nofollow, mark_as_urlized],
+    )
+
+    return mark_safe(result)
 
 
 def mark_redacted(original="", redacted="", authenticated_read=False):
@@ -203,7 +220,7 @@ def mark_redacted(original="", redacted="", authenticated_read=False):
             original,
             redacted,
             attrs='class="redacted-dummy redacted-hover"'
-            ' data-toggle="tooltip" title="{title}"'.format(
+            ' data-bs-toggle="tooltip" title="{title}"'.format(
                 title=_("Only visible to you")
             ),
         )
@@ -214,7 +231,11 @@ def mark_redacted(original="", redacted="", authenticated_read=False):
 
 
 def markup_redacted_content(
-    real_content, redacted_content, authenticated_read=False, message_id=None
+    real_content,
+    redacted_content,
+    authenticated_read=False,
+    message_id=None,
+    render_footer=True,
 ):
     c_1, c_2 = split_text_by_separator(real_content)
     r_1, r_2 = split_text_by_separator(redacted_content)
@@ -226,14 +247,14 @@ def markup_redacted_content(
         original=c_2, redacted=r_2, authenticated_read=authenticated_read
     )
 
-    if content_2 and message_id:
+    if content_2 and message_id and render_footer:
         return mark_safe(
             "".join(
                 [
                     '<div class="text-content-visible">',
                     content_1,
                     (
-                        '</div><a class="btn btn-sm btn-light btn-block" href="#message-footer-{message_id}" data-toggle="collapse" '
+                        '</div><a class="btn btn-sm btn-light btn-block" href="#message-footer-{message_id}" data-bs-toggle="collapse" '
                         ' aria-expanded="false" aria-controls="message-footer-{message_id}">{label}</a>'
                         '<div id="message-footer-{message_id}" class="collapse">'.format(
                             message_id=message_id, label=_("Show the quoted message")
@@ -343,9 +364,19 @@ def get_comment_list(context, message):
         ct = ContentType.objects.get_for_model(FoiMessage)
         foirequest = message.request
         mids = [m.id for m in foirequest.messages]
-        comments = Comment.objects.filter(
-            content_type=ct, object_pk__in=mids, site_id=foirequest.site_id
-        ).select_related("user")
+        comments = (
+            Comment.objects.filter(
+                content_type=ct, object_pk__in=mids, site_id=foirequest.site_id
+            )
+            .annotate(
+                is_requester=Case(
+                    When(user=foirequest.user, then=Value(1)),
+                    default=Value(0),
+                ),
+            )
+            .order_by("-submit_date")
+            .select_related("user")
+        )
         comment_mapping = defaultdict(list)
         for c in comments:
             comment_mapping[c.object_pk].append(c)
@@ -400,3 +431,17 @@ def readable_status(status, resolution=""):
     if status == FoiRequest.STATUS.RESOLVED and resolution:
         status = resolution
     return FoiRequest.get_readable_status(status)
+
+
+@register.inclusion_tag(
+    "foirequest/snippets/moderation_triggers.html", takes_context=True
+)
+def render_moderation_actions(context, foirequest):
+    triggers = get_moderation_triggers(foirequest, request=context["request"])
+    return {"triggers": triggers.values(), "object": foirequest}
+
+
+@register.simple_tag(takes_context=True)
+def get_project_form(context, obj):
+    request = context["request"]
+    return AssignProjectForm(instance=obj, user=request.user)

@@ -2,30 +2,30 @@ import json
 import logging
 
 from django.http import Http404
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
-from django.urls import reverse
 
+from oauth2_provider.contrib.rest_framework import TokenHasScope
 from rest_framework import mixins, status
 from rest_framework.exceptions import MethodNotAllowed
 from rest_framework.metadata import BaseMetadata
+from rest_framework.parsers import BaseParser, DataAndFiles
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
-from rest_framework.parsers import BaseParser, DataAndFiles
 
-from oauth2_provider.contrib.rest_framework import TokenHasScope
-
+from . import constants
+from . import settings as tus_settings
 from . import (
+    tus_api_checksum_algorithms,
+    tus_api_extensions,
     tus_api_version,
     tus_api_version_supported,
-    tus_api_extensions,
-    tus_api_checksum_algorithms,
 )
 from .exceptions import Conflict, TusParseError
 from .models import Upload, states
-from .serializers import UploadSerializer, UploadCreateSerializer
-from .utils import encode_upload_metadata, checksum_matches, augment_request
-from . import constants, settings as tus_settings
+from .serializers import UploadCreateSerializer, UploadSerializer
+from .utils import augment_request, checksum_matches, encode_upload_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -244,7 +244,7 @@ class TusPatchMixin(mixins.UpdateModelMixin):
         if not self._is_valid_content_type(request):
             return Response(
                 'Invalid value for "Content-Type" header: {}. Expected "{}".'.format(
-                    request.META["CONTENT_TYPE"], TusUploadStreamParser.media_type
+                    request.headers["content-type"], TusUploadStreamParser.media_type
                 ),
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -300,7 +300,7 @@ class TusPatchMixin(mixins.UpdateModelMixin):
             )
 
         # Write file
-        chunk_size = int(request.META.get("CONTENT_LENGTH", 102400))
+        chunk_size = int(request.headers.get("content-length", 102400))
         try:
             upload.write_data(chunk_bytes, chunk_size)
         except Exception as e:
@@ -320,7 +320,7 @@ class TusPatchMixin(mixins.UpdateModelMixin):
         return Response(headers=headers, status=status.HTTP_204_NO_CONTENT)
 
     def _is_valid_content_type(self, request):
-        return request.META["CONTENT_TYPE"] == TusUploadStreamParser.media_type
+        return request.headers["content-type"] == TusUploadStreamParser.media_type
 
 
 class TusTerminateMixin(mixins.DestroyModelMixin):

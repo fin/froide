@@ -1,19 +1,17 @@
 from datetime import timedelta
+from functools import partial
 
-from django.db import models
 from django.conf import settings
+from django.db import models, transaction
 from django.dispatch import Signal
 from django.urls import reverse
-from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
-from filingcabinet.pdf_utils import can_convert_to_pdf
-
-from froide.helper.storage import HashedFilenameStorage
 from froide.document.models import Document
+from froide.helper.storage import HashedFilenameStorage
 
 from .message import FoiMessage
-
 
 DELETE_TIMEFRAME = timedelta(hours=36)
 
@@ -26,6 +24,7 @@ PDF_FILETYPES = (
     "text/pdf",
     "text/x-pdf",
 )
+MIMETYPE_OCTET_STREAM = "application/octet-stream"
 
 WORD_FILETYPES = (
     "application/msword",
@@ -165,6 +164,7 @@ class FoiAttachment(models.Model):
     is_converted = models.BooleanField(_("Is converted"), default=False)
     timestamp = models.DateTimeField(null=True, default=timezone.now)
     pending = models.BooleanField(default=False)
+    is_moderated = models.BooleanField(_("Has been moderated"), default=False)
 
     document = models.OneToOneField(
         Document,
@@ -176,7 +176,8 @@ class FoiAttachment(models.Model):
 
     objects = FoiAttachmentManager()
 
-    attachment_published = Signal()  # args: ['user']
+    attachment_approved = Signal()  # args: ['user', 'redacted']
+    attachment_unapproved = Signal()  # args: ['user']
     attachment_deleted = Signal()  # args: ['user']
     attachment_redacted = Signal()  # args: ['user']
     document_created = Signal()  # args: ['user']
@@ -190,6 +191,11 @@ class FoiAttachment(models.Model):
 
     def __str__(self):
         return "%s (%s) of %s" % (self.name, self.size, self.belongs_to)
+
+    @property
+    def slug(self):
+        # Introduce proper slug field later
+        return self.name
 
     def index_content(self):
         return "\n".join((self.name,))
@@ -230,7 +236,14 @@ class FoiAttachment(models.Model):
         return self.filetype in PDF_FILETYPES or (
             self.name
             and self.name.endswith((".pdf", ".PDF"))
-            and self.filetype == "application/octet-stream"
+            and self.filetype == MIMETYPE_OCTET_STREAM
+        )
+
+    @classmethod
+    def make_is_pdf_q(cls):
+        return models.Q(filetype__in=PDF_FILETYPES) | (
+            (models.Q(name__endswith=".pdf") | models.Q(name__endswith=".PDF"))
+            & models.Q(filetype=MIMETYPE_OCTET_STREAM)
         )
 
     @property
@@ -359,6 +372,8 @@ class FoiAttachment(models.Model):
         self.delete()
 
     def can_convert_to_pdf(self):
+        from filingcabinet.pdf_utils import can_convert_to_pdf
+
         ft = self.filetype.lower()
         name = self.name.lower()
         return self.converted_id is None and can_convert_to_pdf(ft, name=name)
@@ -387,6 +402,6 @@ class FoiAttachment(models.Model):
 
         from filingcabinet.tasks import process_document_task
 
-        process_document_task.delay(doc.pk)
+        transaction.on_commit(partial(process_document_task.delay, doc.pk))
 
         return doc

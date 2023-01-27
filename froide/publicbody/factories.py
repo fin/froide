@@ -1,22 +1,22 @@
-from datetime import timedelta
 import random
 import string
+from datetime import timedelta
 
-from django.template.defaultfilters import slugify
-from django.utils import timezone
 from django.contrib.sites.models import Site
+from django.utils import timezone
 
 import factory
 from factory.django import DjangoModelFactory
 
 from froide.account.factories import UserFactory
+from froide.helper.text_utils import slugify
 
 from .models import (
-    Jurisdiction,
-    FoiLaw,
-    PublicBody,
-    Classification,
     Category,
+    Classification,
+    FoiLaw,
+    Jurisdiction,
+    PublicBody,
     PublicBodyTag,
 )
 

@@ -1,27 +1,29 @@
 import json
 import os
 import re
+from re import Pattern
+from typing import Dict, List, Optional, Tuple, Union
 
-from django.db import models
 from django.conf import settings
-from django.utils.translation import gettext_lazy as _
-from django.urls import reverse
-from django.utils import timezone
-from django.contrib.postgres.fields import CIEmailField
 from django.contrib.auth.models import (
     AbstractBaseUser,
-    PermissionsMixin,
     BaseUserManager,
+    PermissionsMixin,
 )
 from django.contrib.auth.validators import UnicodeUsernameValidator
-
-from taggit.managers import TaggableManager
-from taggit.models import TaggedItemBase, TagBase
+from django.contrib.postgres.fields import CIEmailField
+from django.db import models
+from django.db.models.query import QuerySet
+from django.urls import reverse
+from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 from oauth2_provider.models import AbstractApplication
+from taggit.managers import TaggableManager
+from taggit.models import TagBase, TaggedItemBase
 
 from froide.helper.csv_utils import export_csv, get_dict
-from froide.helper.storage import HashedFilenameStorage
+from froide.helper.storage import HashedFilenameStorage, delete_file_if_last_reference
 
 
 class UserTag(TagBase):
@@ -45,11 +47,17 @@ class TaggedUser(TaggedItemBase):
 
 
 class UserManager(BaseUserManager):
-    def get_public_profiles(self):
+    def get_public_profiles(self) -> QuerySet:
         return super().get_queryset().filter(is_active=True, private=False)
 
     def _create_user(
-        self, email, username, password, is_staff, is_superuser, **extra_fields
+        self,
+        email: str,
+        username: str,
+        password: str,
+        is_staff: bool,
+        is_superuser: bool,
+        **extra_fields
     ):
         """
         Creates and saves a User with the given email and password.
@@ -77,7 +85,9 @@ class UserManager(BaseUserManager):
         user.save(using=self._db)
         return user
 
-    def create_user(self, email, username, password=None, **extra_fields):
+    def create_user(
+        self, email: str, username: str, password: Optional[str] = None, **extra_fields
+    ):
         return self._create_user(
             email, username, password, False, False, **extra_fields
         )
@@ -89,6 +99,10 @@ class UserManager(BaseUserManager):
 def profile_photo_path(instance=None, filename=None):
     path = ["profile", filename]
     return os.path.join(*path)
+
+
+Replacements = Optional[Dict[str, str]]
+Redactions = List[Union[Tuple[str, str], Tuple[Pattern, str]]]
 
 
 class User(AbstractBaseUser, PermissionsMixin):
@@ -126,7 +140,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     )
     date_joined = models.DateTimeField(_("date joined"), default=timezone.now)
 
-    organization = models.CharField(
+    organization_name = models.CharField(
         _("Organization"),
         blank=True,
         max_length=255,
@@ -172,6 +186,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     )
 
     tags = TaggableManager(through=TaggedUser, blank=True)
+    notes = models.TextField(blank=True)
 
     objects = UserManager()
 
@@ -181,19 +196,19 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     backend = settings.AUTHENTICATION_BACKENDS[0]
 
-    def __str__(self):
+    def __str__(self) -> str:
         if self.email is None:
             return self.username
         return self.email
 
-    def get_absolute_url(self):
+    def get_absolute_url(self) -> str:
         if self.private:
             return ""
         if not self.username:
             return ""
         return reverse("account-profile", kwargs={"slug": self.username})
 
-    def get_full_name(self):
+    def get_full_name(self) -> str:
         """
         Returns the first_name plus the last_name, with a space in between.
         """
@@ -210,7 +225,7 @@ class User(AbstractBaseUser, PermissionsMixin):
             d["request_count"] = self.foirequest_set.all().count()
         return d
 
-    def trusted(self):
+    def trusted(self) -> bool:
         return self.is_trusted or self.is_staff or self.is_superuser
 
     @classmethod
@@ -233,7 +248,7 @@ class User(AbstractBaseUser, PermissionsMixin):
             )
         return export_csv(queryset, fields)
 
-    def as_json(self):
+    def as_json(self) -> str:
         return json.dumps(
             {
                 "id": self.id,
@@ -242,16 +257,16 @@ class User(AbstractBaseUser, PermissionsMixin):
                 "address": self.address,
                 "private": self.private,
                 "email": self.email,
-                "organization": self.organization,
+                "organization": self.organization_name,
             }
         )
 
-    def display_name(self):
+    def display_name(self) -> str:
         if self.private:
             return str(_("<< Name Not Public >>"))
         else:
-            if self.organization:
-                return "%s (%s)" % (self.get_full_name(), self.organization)
+            if self.organization_name:
+                return "%s (%s)" % (self.get_full_name(), self.organization_name)
             else:
                 return self.get_full_name()
 
@@ -260,13 +275,13 @@ class User(AbstractBaseUser, PermissionsMixin):
 
         return AccountService(self)
 
-    def get_autologin_url(self, url="/"):
+    def get_autologin_url(self, url: str = "/") -> str:
         from .services import AccountService
 
         service = AccountService(self)
         return service.get_autologin_url(url)
 
-    def get_redactions(self, replacements=None):
+    def get_redactions(self, replacements: Replacements = None) -> Redactions:
         account_service = self.get_account_service()
         return list(account_service.get_user_redactions(replacements))
 
@@ -290,7 +305,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 
         return AccountSettingsForm(*args, instance=self, **kwargs)
 
-    def send_mail(self, subject, body, **kwargs):
+    def send_mail(self, subject: str, body: str, **kwargs) -> int:
         from .utils import send_mail_user
 
         return send_mail_user(subject, body, self, **kwargs)
@@ -307,6 +322,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     def deactivate_and_block(self):
         self.is_blocked = True
         self.deactivate()
+
+    def delete_profile_photo(self):
+        if self.profile_photo:
+            delete_file_if_last_reference(self, "profile_photo", delete_prefix=True)
+            self.profile_photo = None
 
 
 class Application(AbstractApplication):
@@ -341,7 +361,7 @@ class Application(AbstractApplication):
 
 
 class AccountBlocklistManager(models.Manager):
-    def is_blocklisted(self, user):
+    def is_blocklisted(self, user: User) -> bool:
         if user.is_blocked:
             return True
 
@@ -351,7 +371,7 @@ class AccountBlocklistManager(models.Manager):
                 return True
         return False
 
-    def should_block_address(self, address):
+    def should_block_address(self, address: str) -> bool:
         for entry in AccountBlocklist.objects.all():
             match = entry.match_content(entry.address, address)
             if match:
@@ -375,15 +395,15 @@ class AccountBlocklist(models.Model):
     def __str__(self):
         return self.name
 
-    def match_user(self, user):
+    def match_user(self, user: User) -> bool:
         return self.match_field(user, "address") or self.match_field(user, "email")
 
-    def match_field(self, user, key):
+    def match_field(self, user: User, key: str) -> bool:
         content = getattr(self, key)
         value = getattr(user, key)
         return self.match_content(content, value)
 
-    def match_content(self, content, value):
+    def match_content(self, content: str, value: str) -> bool:
         if not content:
             return False
         for line in content.splitlines():

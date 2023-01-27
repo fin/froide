@@ -1,16 +1,17 @@
-from django.urls import path, re_path, include
 from django.conf import settings
+from django.urls import include, path, re_path
 from django.utils.translation import pgettext_lazy
 
-from filingcabinet.urls import urlpatterns as fc_urlpatterns
+from filingcabinet.urls import fc_urlpatterns
 
 from .views import (
-    DocumentSearchView,
-    DocumentSearchFeedView,
     DocumentFileDetailView,
+    DocumentSearchFeedView,
+    DocumentSearchView,
+    set_description,
+    set_title,
     upload_documents,
 )
-
 
 urlpatterns = [
     path("", include((fc_urlpatterns, "filingcabinet"), namespace=None)),
@@ -26,6 +27,16 @@ urlpatterns = [
     ),
     path(
         pgettext_lazy("url part", "upload/"), upload_documents, name="document-upload"
+    ),
+    path(
+        pgettext_lazy("url part", "<int:pk>/set_title"),
+        set_title,
+        name="document-set_title",
+    ),
+    path(
+        pgettext_lazy("url part", "<int:pk>/set_description"),
+        set_description,
+        name="document-set_description",
     ),
 ]
 

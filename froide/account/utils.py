@@ -1,18 +1,22 @@
-from datetime import timedelta
 import re
+from datetime import timedelta
+from typing import Any, Dict, Optional, Tuple, Union
 
-from django.utils import timezone
-from django.db import transaction
 from django.contrib.sessions.models import Session
+from django.db import transaction
+from django.db.models.query import QuerySet
+from django.utils import timezone
+from django.utils.functional import SimpleLazyObject
 
 from froide.accesstoken.models import AccessToken
+from froide.helper.date_utils import get_midnight
 from froide.helper.email_sending import (
-    send_mail,
     mail_middleware_registry,
     mail_registry,
+    send_mail,
 )
 
-from . import account_canceled, account_merged
+from . import account_canceled, account_future_canceled, account_merged
 from .models import User
 from .tasks import make_account_private_task
 
@@ -21,6 +25,7 @@ TRAILING_COMMA = re.compile(r"\s*,\s*$")
 
 EXPIRE_UNCONFIRMED_USERS_AGE = timedelta(days=30)
 CANCEL_DEACTIVATED_USERS_AGE = timedelta(days=100)
+FUTURE_CANCEL_PERIOD = timedelta(days=31)
 
 
 def send_mail_users(subject, body, users, **kwargs):
@@ -28,8 +33,16 @@ def send_mail_users(subject, body, users, **kwargs):
         send_mail_user(subject, body, user, **kwargs)
 
 
+EmailKwargs = Dict[str, Optional[Union[str, bool, Dict[str, str]]]]
+
+
 class OnlyActiveUsersMailMiddleware:
-    def should_mail(self, mail_intent, context, email_kwargs):
+    def should_mail(
+        self,
+        mail_intent: str,
+        context: Dict[str, Any],
+        email_kwargs: EmailKwargs,
+    ) -> None:
         user = context.get("user")
         if not user:
             # No user, not our concern here
@@ -44,7 +57,9 @@ class OnlyActiveUsersMailMiddleware:
 mail_middleware_registry.register(OnlyActiveUsersMailMiddleware())
 
 
-def send_mail_user(subject, body, user: User, ignore_active=False, **kwargs):
+def send_mail_user(
+    subject: str, body: str, user: User, ignore_active: bool = False, **kwargs
+) -> int:
     if not ignore_active and not user.is_active:
         return
     if not user.email:
@@ -56,7 +71,7 @@ def send_mail_user(subject, body, user: User, ignore_active=False, **kwargs):
 user_email = mail_registry.register("account/emails/user_email", ("subject", "body"))
 
 
-def send_template_mail(user: User, subject: str, body: str, **kwargs):
+def send_template_mail(user: User, subject: str, body: str, **kwargs) -> int:
     mail_context = {
         "first_name": user.first_name,
         "last_name": user.last_name,
@@ -72,17 +87,17 @@ def send_template_mail(user: User, subject: str, body: str, **kwargs):
 
 def make_account_private(user):
     user.private = True
-    user.organization = ""
+    user.organization_name = ""
     user.organization_url = ""
     user.profile_text = ""
     if user.profile_photo:
-        user.profile_photo.delete(save=False)
+        user.delete_profile_photo()
     user.save()
 
     make_account_private_task.delay(user.id)
 
 
-def merge_accounts(old_user, new_user):
+def merge_accounts(old_user: User, new_user: User) -> None:
     for tag in old_user.tags.all():
         new_user.tags.add(tag)
     account_merged.send(sender=User, old_user=old_user, new_user=new_user)
@@ -90,7 +105,16 @@ def merge_accounts(old_user, new_user):
     old_user.delete()
 
 
-def move_ownership(model, attr, old_user, new_user, dupe=None):
+Dupe = Optional[Tuple[str, str]]
+
+
+def move_ownership(
+    model: Any,
+    attr: str,
+    old_user: Union[int, User],
+    new_user: Union[int, User],
+    dupe: Dupe = None,
+) -> None:
     qs = model.objects.filter(**{attr: old_user})
 
     if dupe:
@@ -109,24 +133,49 @@ def move_ownership(model, attr, old_user, new_user, dupe=None):
     qs = model.objects.filter(**{attr: old_user}).delete()
 
 
-def all_unexpired_sessions_for_user(user):
+def all_unexpired_sessions_for_user(user: Union[SimpleLazyObject, User]) -> QuerySet:
     user_sessions = []
     all_sessions = Session.objects.filter(expire_date__gte=timezone.now())
     for session in all_sessions:
         session_data = session.get_decoded()
-        if user.pk == session_data.get("_auth_user_id"):
+        if str(user.pk) == str(session_data.get("_auth_user_id")):
             user_sessions.append(session.pk)
     return Session.objects.filter(pk__in=user_sessions)
 
 
-def delete_all_unexpired_sessions_for_user(user, session_to_omit=None):
+def delete_all_unexpired_sessions_for_user(
+    user: Union[SimpleLazyObject, User], session_to_omit: None = None
+) -> None:
     session_list = all_unexpired_sessions_for_user(user)
     if session_to_omit is not None:
         session_list.exclude(session_key=session_to_omit.session_key)
     session_list.delete()
 
 
-def start_cancel_account_process(user, delete=False):
+future_cancel_mail = mail_registry.register(
+    "account/emails/future_cancel_user", ("user",)
+)
+
+
+def future_cancel_user(user, notify=False):
+    user.is_trusted = False
+    user.is_blocked = True
+    # Do not delete yet!
+    user.is_deleted = False
+    now = timezone.localtime(timezone.now())
+    user.date_left = get_midnight(now + FUTURE_CANCEL_PERIOD)
+    user.notes += "Canceled on {} for {}\n\n".format(
+        now.isoformat(), user.date_left.isoformat()
+    )
+    user.save()
+
+    account_future_canceled.send(user)
+
+    if notify:
+        future_cancel_mail.send(user=user)
+
+
+def start_cancel_account_process(user: SimpleLazyObject, delete: bool = False) -> None:
     from .tasks import cancel_account_task
 
     user.private = True
@@ -144,7 +193,7 @@ def start_cancel_account_process(user, delete=False):
     cancel_account_task.delay(user.pk, delete=delete)
 
 
-def cancel_user(user, delete=False):
+def cancel_user(user: User, delete: bool = False) -> None:
     with transaction.atomic():
         account_canceled.send(sender=User, user=user)
 
@@ -154,7 +203,7 @@ def cancel_user(user, delete=False):
         user.delete()
         return
 
-    user.organization = ""
+    user.organization_name = ""
     user.organization_url = ""
     user.private = True
     user.terms = False
@@ -168,9 +217,11 @@ def cancel_user(user, delete=False):
     user.is_staff = False
     user.is_superuser = False
     user.is_active = False
-    user.date_deactivated = timezone.now()
+    if not user.date_deactivated:
+        user.date_deactivated = timezone.now()
     user.is_deleted = True
-    user.date_left = timezone.now()
+    if not user.date_left:
+        user.date_left = timezone.now()
     user.email = None
     user.set_unusable_password()
     user.username = "u%s" % user.pk
@@ -195,6 +246,15 @@ def delete_deactivated_users():
         is_active=False, is_deleted=False, date_deactivated__lt=time_ago
     )
     for user in expired_users:
+        start_cancel_account_process(user)
+
+
+def delete_undeleted_left_users():
+    now = timezone.now()
+    canceled_but_undeleted = User.objects.filter(
+        date_left__isnull=False, date_left__lt=now, is_deleted=False
+    )
+    for user in canceled_but_undeleted:
         start_cancel_account_process(user)
 
 
@@ -252,7 +312,7 @@ def check_account_compatibility(groups):
 
 
 def delete_expired_onetime_login_tokens():
-    from .services import ONE_TIME_LOGIN_PURPOSE, ONE_TIME_LOGIN_EXPIRY
+    from .services import ONE_TIME_LOGIN_EXPIRY, ONE_TIME_LOGIN_PURPOSE
 
     time_ago = timezone.now() - ONE_TIME_LOGIN_EXPIRY
     AccessToken.objects.filter(

@@ -1,5 +1,5 @@
-from django.contrib.gis import admin
 from django import forms
+from django.contrib.gis import admin
 from django.utils.translation import gettext_lazy as _
 
 from treebeard.forms import movenodeform_factory
@@ -47,8 +47,6 @@ class GeoRegionMixin(object):
     readonly_fields = ("depth", "numchild", "path")
 
 
-class GeoRegionAdmin(GeoRegionMixin, admin.GeoModelAdmin):
+@admin.register(GeoRegion)
+class GeoRegionAdmin(GeoRegionMixin, admin.GISModelAdmin):
     pass
-
-
-admin.site.register(GeoRegion, GeoRegionAdmin)

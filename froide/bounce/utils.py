@@ -4,34 +4,36 @@ https://en.wikipedia.org/wiki/Variable_envelope_return_path
 
 """
 import base64
-from contextlib import closing
 import datetime
-from email.utils import parseaddr
-from io import BytesIO
 import time
+from contextlib import closing
+from io import BytesIO
 from urllib.parse import quote
 
 from django.conf import settings
-from django.core.mail import mail_managers
-from django.core.signing import TimestampSigner, SignatureExpired, BadSignature
-from django.utils.crypto import salted_hmac
-from django.utils import timezone
 from django.core.exceptions import ValidationError
-from django.core.validators import validate_email
+from django.core.mail import mail_managers
 from django.core.mail.message import sanitize_address
+from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
+from django.core.validators import validate_email
+from django.utils import timezone
+from django.utils.crypto import salted_hmac
 
+from froide.helper.email_parsing import (
+    parse_email,
+    parse_email_address,
+    parse_header_field,
+)
 from froide.helper.email_utils import (
+    BounceResult,
+    classify_bounce_status,
+    find_status_from_diagnostic,
     get_mail_client,
     get_unread_mails,
-    BounceResult,
-    find_status_from_diagnostic,
-    classify_bounce_status,
 )
-from froide.helper.email_parsing import parse_email, parse_header_field
 
-from .signals import user_email_bounced, email_bounced, email_unsubscribed
 from .models import Bounce
-
+from .signals import email_bounced, email_unsubscribed, user_email_bounced
 
 BOUNCE_FORMAT = settings.FROIDE_CONFIG["bounce_format"]
 UNSUBSCRIBE_FORMAT = settings.FROIDE_CONFIG["unsubscribe_format"]
@@ -70,7 +72,8 @@ class CustomTimestampSigner(TimestampSigner):
     Signs in base32 so that only lower case characters are used.
     """
 
-    def signature(self, value):
+    def signature(self, value, key=None):
+        key = key or self.key
         return base32_hmac(self.salt + "signer", value, self.key)
 
     def timestamp(self):
@@ -94,14 +97,14 @@ class CustomTimestampSigner(TimestampSigner):
         return value
 
 
-def make_bounce_address(email):
-    _, email = parseaddr(email)
-    return make_signed_address(email)
+def make_bounce_address(email_str: str) -> str:
+    email_address = parse_email_address(email_str)
+    return make_signed_address(email_address.email)
 
 
-def make_unsubscribe_header(email, reference):
-    _, email = parseaddr(email)
-    unsub_email = make_unsubscribe_address(email)
+def make_unsubscribe_header(email_str: str, reference: str) -> str:
+    email_address = parse_email_address(email_str)
+    unsub_email = make_unsubscribe_address(email_address.email)
     return "<mailto:{email}?subject={subject}>".format(
         email=unsub_email,
         subject=quote(
@@ -203,7 +206,7 @@ def process_unsubscribe_mail(mail_bytes):
     with closing(BytesIO(mail_bytes)) as stream:
         email = parse_email(stream)
     recipient_list = list(
-        set([get_recipient_address_from_unsubscribe(addr) for name, addr in email.to])
+        set([get_recipient_address_from_unsubscribe(x.email) for x in email.to])
     )
     if len(recipient_list) != 1:
         return
@@ -231,9 +234,7 @@ def process_bounce_mail(mail_bytes):
 
 
 def add_bounce_mail(email):
-    recipient_list = set(
-        [get_recipient_address_from_bounce(addr) for name, addr in email.to]
-    )
+    recipient_list = set([get_recipient_address_from_bounce(x.email) for x in email.to])
     for recipient, status in recipient_list:
         if status:
             update_bounce(email, recipient)

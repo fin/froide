@@ -1,15 +1,17 @@
+import html
 import json
+import re
 
 from django.db.models import Q
-from django.utils.text import slugify
+
+from markdown.core import Markdown
+from markdown.extensions import Extension
+from markdown.treeprocessors import Treeprocessor
+from markdown.util import AtomicString
+
+from froide.helper.text_utils import slugify
 
 from .models import PublicBody
-
-import re
-import html
-from markdown.treeprocessors import Treeprocessor
-from markdown.extensions import Extension
-from markdown.util import AtomicString
 
 
 def export_user_data(user):
@@ -43,7 +45,7 @@ def export_user_data(user):
 
 # add anchors to law markdown
 class LawTreeprocessor(Treeprocessor):
-    def __init__(self, md):
+    def __init__(self, md: Markdown) -> None:
         super().__init__(md)
 
         self.used_ids = set()
@@ -105,5 +107,5 @@ class LawTreeprocessor(Treeprocessor):
 
 
 class LawExtension(Extension):
-    def extendMarkdown(self, md):
+    def extendMarkdown(self, md: Markdown) -> None:
         md.treeprocessors.register(LawTreeprocessor(md), "laws", 5)

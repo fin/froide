@@ -1,33 +1,31 @@
+import json
 from datetime import timedelta
 
-from django.contrib.gis.db import models
-from django.utils.translation import gettext_lazy as _
-from django.contrib.sites.models import Site
-from django.contrib.sites.managers import CurrentSiteManager
-from django.urls import reverse
 from django.conf import settings
-from django.utils.text import Truncator
-from django.utils.safestring import mark_safe
-from django.utils.html import escape
-from django.utils import timezone
+from django.contrib.gis.db import models
+from django.contrib.sites.managers import CurrentSiteManager
+from django.contrib.sites.models import Site
 from django.dispatch import Signal
+from django.urls import reverse
+from django.utils import timezone
+from django.utils.html import escape
+from django.utils.safestring import mark_safe
+from django.utils.text import Truncator
+from django.utils.translation import gettext_lazy as _
 
+from parler.models import TranslatableModel, TranslatedFields
 from taggit.managers import TaggableManager
 from taggit.models import TagBase, TaggedItemBase
 from taggit.utils import edit_string_for_tags
 from treebeard.mp_tree import MP_Node, MP_NodeManager
-from parler.models import TranslatableModel, TranslatedFields
 
 from froide.georegion.models import GeoRegion
-
+from froide.helper.csv_utils import export_csv
 from froide.helper.date_utils import (
-    calculate_workingday_range,
     calculate_month_range_de,
+    calculate_workingday_range,
 )
 from froide.helper.templatetags.markup import markdown
-from froide.helper.csv_utils import export_csv
-from froide.helper.api_utils import get_fake_api_context
-
 
 DEFAULT_LAW = settings.FROIDE_CONFIG.get("default_law", 1)
 
@@ -165,6 +163,10 @@ class FoiLaw(TranslatableModel):
     class Meta:
         verbose_name = _("Freedom of Information Law")
         verbose_name_plural = _("Freedom of Information Laws")
+        ordering = (
+            "-meta",
+            "-priority",
+        )
 
     def __str__(self):
         return "%s (%s)" % (self.name, self.jurisdiction if self.jurisdiction else "")
@@ -201,6 +203,8 @@ class FoiLaw(TranslatableModel):
             ]
 
     def as_data(self, request=None):
+        from froide.helper.api_utils import get_fake_api_context
+
         from .api_views import FoiLawSerializer
 
         if request is None:
@@ -383,7 +387,6 @@ class PublicBody(models.Model):
     alternative_emails = models.JSONField(null=True, blank=True)
     extra_data = models.JSONField(default=dict, blank=True)
 
-    change_proposals = models.JSONField(default=dict, blank=True)
     change_history = models.JSONField(default=list, blank=True)
 
     file_index = models.CharField(_("file index"), max_length=1024, blank=True)
@@ -510,7 +513,7 @@ class PublicBody(models.Model):
 
     @property
     def change_proposal_count(self):
-        return len(self.change_proposals)
+        return self.change_proposals.count()
 
     def get_applicable_law(self, law_type=None):
         return get_applicable_law(pb=self, law_type=law_type)
@@ -552,6 +555,8 @@ class PublicBody(models.Model):
         )
 
     def _as_data(self, serializer_klass, request=None):
+        from froide.helper.api_utils import get_fake_api_context
+
         if request is None:
             ctx = get_fake_api_context()
         else:
@@ -574,7 +579,6 @@ class PublicBody(models.Model):
 
     @classmethod
     def export_csv(cls, queryset):
-
         fields = (
             "id",
             "name",
@@ -625,3 +629,121 @@ class ProposedPublicBody(PublicBody):
         ordering = ("-created_at",)
         verbose_name = _("Proposed Public Body")
         verbose_name_plural = _("Proposed Public Bodies")
+
+
+class CategorizedPublicBodyChangeProposal(TaggedItemBase):
+    tag = models.ForeignKey(
+        Category,
+        on_delete=models.CASCADE,
+        related_name="categorized_publicbody_change_proposals",
+    )
+    content_object = models.ForeignKey(
+        "PublicBodyChangeProposal", on_delete=models.CASCADE
+    )
+
+    class Meta:
+        verbose_name = _("Categorized Public Body Change Proposal")
+        verbose_name_plural = _("Categorized Public Body Change Proposals")
+
+
+class PublicBodyChangeProposal(models.Model):
+    publicbody = models.ForeignKey(
+        PublicBody, on_delete=models.CASCADE, related_name="change_proposals"
+    )
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(_("Created at"), default=timezone.now)
+
+    name = models.CharField(_("Name"), max_length=255)
+    other_names = models.TextField(_("Other names"), default="", blank=True)
+
+    url = models.URLField(_("URL"), null=True, blank=True, max_length=500)
+
+    classification = models.ForeignKey(
+        Classification, null=True, blank=True, on_delete=models.SET_NULL
+    )
+
+    email = models.EmailField(_("Email"), blank=True, default="")
+    fax = models.CharField(max_length=50, blank=True)
+    contact = models.TextField(_("Contact"), blank=True)
+    address = models.TextField(_("Address"), blank=True)
+
+    file_index = models.URLField(_("file index"), max_length=1024, blank=True)
+    org_chart = models.URLField(_("organisational chart"), max_length=1024, blank=True)
+
+    jurisdiction = models.ForeignKey(
+        Jurisdiction,
+        verbose_name=_("Jurisdiction"),
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+    )
+
+    geo = models.PointField(null=True, blank=True, geography=True)
+    regions = models.ManyToManyField(GeoRegion, blank=True)
+
+    categories = TaggableManager(
+        through=CategorizedPublicBodyChangeProposal,
+        verbose_name=_("categories"),
+        blank=True,
+    )
+
+    class Meta:
+        ordering = ("-created_at",)
+        verbose_name = _("Proposed Public Body Change")
+        verbose_name_plural = _("Proposed Public Body Changes")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["publicbody", "user"], name="unique_publicbody_user_change"
+            )
+        ]
+
+    def __str__(self):
+        return "{} ({})".format(self.publicbody, self.user)
+
+    def as_form_data(self):
+        def field_data(field):
+            value = getattr(self, field)
+            return {
+                "value": value,
+                "label": value,
+                "is_changed": value != getattr(self.publicbody, field),
+            }
+
+        regions = self.regions.all()
+        categories = self.categories.all()
+        return {
+            "name": field_data("name"),
+            "other_names": field_data("other_names"),
+            "url": field_data("url"),
+            "classification": {
+                "label": str(self.classification),
+                "value": self.classification_id,
+                "is_changed": self.classification_id
+                != self.publicbody.classification_id,
+            },
+            "email": field_data("email"),
+            "fax": field_data("fax"),
+            "contact": field_data("contact"),
+            "address": field_data("address"),
+            "file_index": field_data("file_index"),
+            "org_chart": field_data("org_chart"),
+            "jurisdiction": {
+                "label": str(self.jurisdiction),
+                "value": self.jurisdiction_id,
+                "is_changed": self.jurisdiction_id != self.publicbody.jurisdiction_id,
+            },
+            "regions": {
+                "label": ", ".join(str(x) for x in regions),
+                "value": json.dumps(
+                    [{"label": str(x), "value": x.id} for x in regions]
+                ),
+                "is_changed": set(regions) != set(self.publicbody.regions.all()),
+            },
+            "categories": {
+                "label": ", ".join(str(x) for x in categories),
+                "value": json.dumps(
+                    [{"label": x.name, "value": x.name} for x in categories]
+                ),
+                "is_changed": set(categories) != set(self.publicbody.categories.all()),
+            },
+        }

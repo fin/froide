@@ -1,43 +1,46 @@
-import uuid
 import json
+import uuid
 
 from django.conf import settings
-from django.http import HttpResponse
-from django.shortcuts import get_object_or_404, redirect, render
-from django.views.decorators.http import require_POST
-from django.utils.translation import gettext as _
 from django.contrib import messages
-from django.urls import reverse
 from django.contrib.auth.decorators import login_required
+from django.http import Http404, HttpResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils.translation import gettext as _
+from django.views.decorators.http import require_POST
+from django.views.generic import UpdateView
 
-from froide.account.forms import NewUserForm, AddressForm
+from froide.account.forms import AddressForm, NewUserForm
+from froide.foirequest.forms.project import AssignProjectForm
+from froide.helper.auth import can_manage_object
+from froide.helper.utils import get_redirect, is_ajax, render_400, render_403
 from froide.team.views import AssignTeamView
-from froide.helper.utils import render_400, render_403, get_redirect, is_ajax
 
-from ..models import FoiRequest, FoiEvent
+from ..auth import (
+    can_mark_not_foi,
+    can_moderate_foirequest,
+    can_write_foirequest,
+    check_foirequest_upload_code,
+    get_read_foirequest_queryset,
+)
+from ..decorators import allow_write_foirequest
 from ..forms import (
+    ApplyModerationForm,
     ConcreteLawForm,
-    TagFoiRequestForm,
+    ExtendDeadlineForm,
     FoiRequestStatusForm,
     MakePublicBodySuggestionForm,
     PublicBodySuggestionsForm,
-    ExtendDeadlineForm,
     PublicBodyUploader,
-)
-from ..utils import check_throttle, get_foi_mail_domains
-from ..services import CreateSameAsRequestService, ActivatePendingRequestService
-from ..auth import (
-    can_write_foirequest,
-    check_foirequest_upload_code,
-    can_moderate_foirequest,
-    can_mark_not_foi,
+    TagFoiRequestForm,
 )
 from ..hooks import registry
-from ..notifications import send_non_foi_notification
-from ..decorators import allow_write_foirequest
-
-from .request import show_foirequest
+from ..models import FoiEvent, FoiRequest
+from ..services import ActivatePendingRequestService, CreateSameAsRequestService
+from ..utils import check_throttle, get_foi_mail_domains
 from .make_request import get_new_account_url
+from .request import show_foirequest
 
 
 @require_POST
@@ -113,6 +116,8 @@ def set_status(request, slug):
         messages.add_message(
             request, messages.SUCCESS, _("Status of request has been updated.")
         )
+        if form.cleaned_data["resolution"] in ("user_withdrew", "user_withdrew_costs"):
+            request.session["show_withdrawal_popup"] = foirequest.id
         response = registry.run_hook(
             "post_status_set",
             request,
@@ -143,10 +148,6 @@ def make_public(request, foirequest):
 @require_POST
 @allow_write_foirequest
 def set_law(request, foirequest):
-    if not foirequest.response_messages():
-        return render_400(request)
-    if not foirequest.law.meta:
-        return render_400(request)
     form = ConcreteLawForm(request.POST, foirequest=foirequest)
     if not form.is_valid():
         return render_400(request)
@@ -194,28 +195,21 @@ def set_summary(request, foirequest):
 
 @require_POST
 @login_required
-def mark_not_foi(request, slug):
-    foirequest = get_object_or_404(FoiRequest, slug=slug)
+def apply_moderation(request, slug):
+    foirequest = get_object_or_404(get_read_foirequest_queryset(request), slug=slug)
 
     if not can_mark_not_foi(foirequest, request):
         return render_403(request)
 
-    foirequest.is_foi = False
-
-    foirequest.visibility = FoiRequest.VISIBILITY.VISIBLE_TO_REQUESTER
-    if foirequest.public:
-        foirequest.public = False
-        FoiRequest.made_private.send(sender=foirequest)
-    FoiEvent.objects.create_event(
-        FoiEvent.EVENTS.MARK_NOT_FOI, foirequest, user=request.user
+    form = ApplyModerationForm(
+        data=request.POST, foirequest=foirequest, request=request
     )
-    foirequest.save()
-    send_non_foi_notification(foirequest)
-    if is_ajax(request):
-        return HttpResponse(_("Marked as NOT FoI"))
-    messages.add_message(
-        request, messages.SUCCESS, _("Request marked as not a FoI request.")
-    )
+    if form.is_valid():
+        result_messages = form.save()
+        result_str = " ".join([str(x) for x in result_messages])
+        if is_ajax(request):
+            return HttpResponse(result_str)
+        messages.add_message(request, messages.SUCCESS, result_str)
     return redirect(foirequest)
 
 
@@ -331,6 +325,26 @@ def extend_deadline(request, foirequest):
 
 class SetTeamView(AssignTeamView):
     model = FoiRequest
+
+
+class SetProjectView(UpdateView):
+    model = FoiRequest
+    form_class = AssignProjectForm
+    template_name = "foirequest/foiproject_detail.html"
+
+    def get_object(self, queryset=None):
+        obj = super().get_object(queryset=queryset)
+        if not can_manage_object(obj, self.request):
+            raise Http404
+        return obj
+
+    def get(self, request, *args, **kwargs):
+        return redirect(self.get_object())
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
 
 
 @require_POST

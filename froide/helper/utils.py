@@ -1,17 +1,19 @@
 import datetime
+import importlib
 import json
+from typing import Dict, Optional, Union
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 
-from django.shortcuts import render, redirect
-from django.urls import reverse, NoReverseMatch
-from django.utils.http import url_has_allowed_host_and_scheme, urlencode
+from django.conf import settings
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
-from typing import Dict, Optional, Union
+from django.shortcuts import redirect, render
+from django.urls import NoReverseMatch, reverse
+from django.utils.http import url_has_allowed_host_and_scheme, urlencode
 
 
 def get_next(request: HttpRequest) -> str:
     # This is not a view
-    return request.GET.get("next", request.META.get("HTTP_REFERER", "/"))
+    return request.GET.get("next", request.headers.get("referer", "/"))
 
 
 def render_code(
@@ -35,13 +37,21 @@ def render_403(
 ) -> Union[HttpResponseRedirect, HttpResponse]:
     if not request.user.is_authenticated:
         return get_redirect(
-            request, default="account-login", params={"next": request.get_full_path()}
+            request,
+            default=settings.LOGIN_URL,
+            params={"next": request.get_full_path()},
         )
     return render_code(403, request, context={"message": message})
 
 
+def redirect_to_login(request: HttpRequest):
+    return get_redirect(
+        request, default=settings.LOGIN_URL, params={"next": request.get_full_path()}
+    )
+
+
 def get_client_ip(request: HttpRequest) -> str:
-    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    x_forwarded_for = request.headers.get("x-forwarded-for")
     if x_forwarded_for:
         ip = x_forwarded_for.split(",")[-1].strip()
     else:
@@ -54,7 +64,7 @@ def get_redirect_url(
     default: str = "/",
     next: None = None,
     allowed_hosts: None = None,
-    params: Optional[Union[Dict[str, str]]] = None,
+    params: Optional[Dict[str, str]] = None,
     keep_session: bool = False,
 ) -> str:
     if next is None:
@@ -78,7 +88,7 @@ def get_redirect_url(
             url=next, allowed_hosts=allowed_hosts
         )
     if next is None or not url_allowed:
-        next = request.META.get("HTTP_REFERER")
+        next = request.headers.get("referer")
         url_allowed = url_has_allowed_host_and_scheme(
             url=next, allowed_hosts=allowed_hosts
         )
@@ -127,3 +137,9 @@ def to_json(obj) -> str:
 
 def is_ajax(request: HttpRequest) -> bool:
     return request.headers.get("x-requested-with") == "XMLHttpRequest"
+
+
+def get_module_attr_from_dotted_path(path):
+    module, attr = path.rsplit(".", 1)
+    module = importlib.import_module(module)
+    return getattr(module, attr)
