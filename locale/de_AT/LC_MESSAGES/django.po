@@ -194,27 +194,6 @@ msgstr ""
 "Sie müssen die Nutzungs- und Datenschutzbedingungen von FragDenStaat.at "
 "akzeptieren."
 
-
-#: froide/account/forms.py
-msgid "You need to accept our Terms and Conditions and Priavcy Statement."
-msgstr ""
-"Sie müssen die Nutzungs- und Datenschutzbedingungen von FragDenStaat.at "
-"akzeptieren."
-
-#: froide/account/forms.py:102
-#, python-format
-msgid ""
-"You agree to our <a href=\"{url_terms}\" target=\"_blank\">Terms and "
-"Conditions</a> and <a href=\"{url_privacy}\" target=\"_blank\">Privacy "
-"Statement</a>"
-msgstr ""
-"Sie stimmen den <a href=\"{url_terms}#nutzungsbedingungen-email-dienst\" "
-"target=\"_blank\">Nutzungsbedingungen E-Mail-Dienst</a>, den <a href="
-"\"{url_terms}#nutzungsbedingungen-archivplattform\" target=\"_blank"
-"\">Nutzungsbedingungen Archivplattform</a> und den <a href=\"{url_privacy}\" "
-"target=\"_blank\">Datenschutzbedingungen</a> von FragDenStaat.at zu."
-
-
 #: froide/account/forms.py
 #, python-brace-format
 msgid ""
@@ -2570,19 +2549,6 @@ msgstr ""
 "at versendet. Antworten werden ggf. im Auftrag der Antragstellenden "
 "automatisch auf dem Internet-Portal veröffentlicht. Falls Sie noch Fragen "
 "haben, besuchen Sie https://fragdenstaat.at/hilfe/fuer-behoerden/\n"
-
-
-#: froide/foirequest/templates/foirequest/emails/request_footer.txt
-msgid ""
-"Legal Note: This mail was sent through a Freedom Of Information Portal. "
-"Replies might be published automatically.\n"
-msgstr ""
-"Rechtshinweis: Diese E-Mail wurde über den Webservice https://fragdenstaat."
-"at versendet. Antworten werden ggf. im Auftrag der Antragstellenden "
-"automatisch auf dem Internet-Portal veröffentlicht. Falls Sie noch Fragen "
-"haben, besuchen Sie https://fragdenstaat.at/hilfe/fuer-behoerden/\n"
-
-
 
 
 
@@ -4945,10 +4911,6 @@ msgid "Public Bodies were imported."
 msgstr "Behörden wurden importiert."
 
 
-#: froide/settings.py:444
-msgid "Access to user status"
-msgstr "Kann Sie als Nutzer auf FragDenStaat.at identifizieren"
-
 #: froide/settings.py:211
 msgid "English"
 msgstr "Englisch"
@@ -5615,14 +5577,6 @@ msgstr "datenschutzerklaerung"
 
 #~ msgid "You received a reply to your Freedom of Information Request"
 #~ msgstr "You received a reply to your Freedom of Information Request"
-
-
-
-#: froide/guide/templates/guide/emails/new_guidance.txt
-msgid "You recently received replies to some of your requests."
-msgstr ""
-"Sie haben vor kurzem Antworten auf einige Ihrer Anfragen bei FragDenStaat.at "
-"erhalten."
 
 
 #: froide/settings.py
