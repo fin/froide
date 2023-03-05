@@ -158,6 +158,7 @@ class PygtailPostfixLogfileParser(PostfixLogfileParser):
             full_lines=True,
             save_on_end=False,
             copytruncate=False,
+            encoding="latin-1",
         )
         super().__init__(self.logfile_reader)
         self._msg_log = defaultdict(lambda: {"log": [], "data": {}, "offset": None})
